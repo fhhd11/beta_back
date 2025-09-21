@@ -17,8 +17,8 @@ class UserProfile(BaseModel):
     role: Optional[str] = Field(None, description="User role")
     subscription_tier: Optional[str] = Field(None, description="User subscription tier")
     agents: List["AgentSummary"] = Field(default_factory=list, description="User's agents")
-    created_at: Optional[datetime] = Field(None, description="Account creation timestamp")
-    last_active: Optional[datetime] = Field(None, description="Last activity timestamp")
+    created_at: Optional[str] = Field(None, description="Account creation timestamp")
+    last_active: Optional[str] = Field(None, description="Last activity timestamp")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional user metadata")
     
     class Config:
@@ -54,8 +54,8 @@ class AgentSummary(BaseModel):
     description: Optional[str] = Field(None, description="Agent description")
     status: str = Field(..., description="Agent status")
     model: Optional[str] = Field(None, description="LLM model used by agent")
-    created_at: datetime = Field(..., description="Agent creation timestamp")
-    updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+    created_at: Optional[str] = Field(None, description="Agent creation timestamp")
+    updated_at: Optional[str] = Field(None, description="Last update timestamp")
     message_count: Optional[int] = Field(None, description="Total message count")
     
     class Config:

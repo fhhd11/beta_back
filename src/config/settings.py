@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     
     # Authentication - Required
     supabase_jwt_secret: str
+    supabase_service_key: str
     letta_api_key: str
     agent_secret_master_key: str
     
@@ -119,6 +120,14 @@ class Settings(BaseSettings):
         # Allow shorter secrets for development/testing
         if len(v) < 10:
             raise ValueError("Supabase JWT secret must be at least 10 characters long")
+        return v
+    
+    @validator("supabase_service_key")
+    def validate_service_key(cls, v):
+        """Validate Supabase service key is provided."""
+        if not v:
+            # Allow placeholder for development
+            return "supabase-service-key-placeholder"
         return v
     
     @validator("letta_api_key")

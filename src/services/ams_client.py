@@ -26,13 +26,14 @@ class AMSClient:
         self.base_url = str(self.settings.ams_base_url).rstrip('/')
         self.timeout = self.settings.request_timeout
         
-        # Configure HTTP client
+        # Configure HTTP client with Supabase service key
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=httpx.Timeout(self.timeout),
             headers={
                 "User-Agent": f"AI-Agent-Gateway/{self.settings.version}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.settings.supabase_service_key}"
             },
             limits=httpx.Limits(
                 max_keepalive_connections=20,
@@ -135,14 +136,57 @@ class AMSClient:
         
         response = await self._make_request(
             method="GET",
-            path="/me",
+            path="/ams/me",  # Full path to AMS endpoint
             user_id=user_id
         )
         
         data = response.json()
         
-        # Convert to UserProfile model
-        return UserProfile(**data)
+        # Convert AMS response to UserProfile model
+        # AMS returns different structure, need to adapt
+        agents_data = data.get("agents", {})
+        agents_list = []
+        
+        # Convert agents dict to list of AgentSummary
+        if isinstance(agents_data, dict):
+            for agent_id, agent_info in agents_data.items():
+                if isinstance(agent_info, dict):
+                    agents_list.append(AgentSummary(
+                        agent_id=agent_id,
+                        name=agent_info.get("name", f"Agent {agent_id}"),
+                        description=agent_info.get("description"),
+                        status=agent_info.get("status", "unknown"),
+                        model=agent_info.get("model"),
+                        created_at=agent_info.get("created_at", data.get("created_at")),
+                        updated_at=agent_info.get("updated_at", data.get("updated_at")),
+                        message_count=agent_info.get("message_count")
+                    ))
+        
+        # If there's a letta_agent_id, add it as an agent
+        if data.get("letta_agent_id") and not agents_list:
+            agents_list.append(AgentSummary(
+                agent_id=data["letta_agent_id"],
+                name=data.get("name", "Letta Agent"),
+                description="Letta agent from AMS",
+                status=data.get("agent_status", "unknown"),
+                created_at=data.get("created_at"),
+                updated_at=data.get("updated_at")
+            ))
+        
+        return UserProfile(
+            user_id=data["id"],
+            email=data.get("email"),
+            display_name=data.get("name"),
+            role="authenticated",  # Default role
+            agents=agents_list,
+            created_at=data.get("created_at"),
+            last_active=data.get("updated_at"),
+            metadata={
+                "profile_exists": data.get("profile_exists"),
+                "letta_agent_id": data.get("letta_agent_id"),
+                "agent_status": data.get("agent_status")
+            }
+        )
     
     async def create_agent(
         self,
