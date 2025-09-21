@@ -4,9 +4,9 @@ Environment-based configuration with Pydantic Settings validation.
 """
 
 from functools import lru_cache
-from typing import List, Optional
-from pydantic_settings import BaseSettings
-from pydantic import validator, AnyHttpUrl
+from typing import List, Optional, Union, Any
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator, model_validator, AnyHttpUrl, Field
 import os
 
 
@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     enable_docs: bool = True
     
     # CORS configuration
-    allowed_origins: List[str] = ["*"]
+    allowed_origins_str: str = Field(default="*", description="Allowed CORS origins (comma-separated or JSON array)", alias="ALLOWED_ORIGINS")
     
     # Redis configuration
     redis_url: str = "redis://localhost:6379"
@@ -89,14 +89,28 @@ class Settings(BaseSettings):
     metrics_path: str = "/metrics"
     health_check_path: str = "/health"
     
-    @validator("allowed_origins", pre=True)
-    def parse_cors_origins(cls, v):
-        """Parse CORS origins from comma-separated string or list."""
-        if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",")]
-        return v
+    @property
+    def allowed_origins(self) -> List[str]:
+        """Parse and return CORS origins as a list."""
+        origins_str = self.allowed_origins_str
+        
+        if isinstance(origins_str, str):
+            # Handle potential JSON-like strings
+            if origins_str.startswith('[') and origins_str.endswith(']'):
+                try:
+                    import json
+                    return json.loads(origins_str)
+                except json.JSONDecodeError:
+                    # If JSON parsing fails, treat as comma-separated
+                    pass
+            # Parse as comma-separated string
+            return [origin.strip() for origin in origins_str.split(",") if origin.strip()]
+        else:
+            # If it's already a list (shouldn't happen with env vars, but just in case)
+            return origins_str if isinstance(origins_str, list) else ["*"]
     
-    @validator("environment")
+    @field_validator("environment")
+    @classmethod
     def validate_environment(cls, v):
         """Validate environment setting."""
         allowed = ["development", "staging", "production"]
@@ -104,7 +118,8 @@ class Settings(BaseSettings):
             raise ValueError(f"Environment must be one of: {allowed}")
         return v
     
-    @validator("log_level")
+    @field_validator("log_level")
+    @classmethod
     def validate_log_level(cls, v):
         """Validate log level setting."""
         allowed = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -112,7 +127,8 @@ class Settings(BaseSettings):
             raise ValueError(f"Log level must be one of: {allowed}")
         return v.upper()
     
-    @validator("supabase_jwt_secret")
+    @field_validator("supabase_jwt_secret")
+    @classmethod
     def validate_jwt_secret(cls, v):
         """Validate JWT secret is provided and has minimum length."""
         if not v:
@@ -122,7 +138,8 @@ class Settings(BaseSettings):
             raise ValueError("Supabase JWT secret must be at least 10 characters long")
         return v
     
-    @validator("supabase_service_key")
+    @field_validator("supabase_service_key")
+    @classmethod
     def validate_service_key(cls, v):
         """Validate Supabase service key is provided."""
         if not v:
@@ -130,7 +147,8 @@ class Settings(BaseSettings):
             return "supabase-service-key-placeholder"
         return v
     
-    @validator("letta_api_key")
+    @field_validator("letta_api_key")
+    @classmethod
     def validate_letta_key(cls, v):
         """Validate Letta API key is provided."""
         if not v:
@@ -138,7 +156,8 @@ class Settings(BaseSettings):
             return "letta-dev-placeholder"
         return v
     
-    @validator("agent_secret_master_key")
+    @field_validator("agent_secret_master_key")
+    @classmethod
     def validate_agent_secret(cls, v):
         """Validate Agent Secret Master Key is provided."""
         if not v:
@@ -167,10 +186,12 @@ class Settings(BaseSettings):
             "decode_responses": True
         }
     
-    model_config = {
-        "case_sensitive": False,
-        "extra": "ignore"
-    }
+    model_config = SettingsConfigDict(
+        case_sensitive=False,
+        extra="ignore",
+        env_parse_none_str="None",
+        env_prefix=""
+    )
 
 
 @lru_cache()
