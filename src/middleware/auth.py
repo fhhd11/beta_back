@@ -126,8 +126,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     
     def _is_public_endpoint(self, path: str) -> bool:
         """Check if endpoint is public and doesn't require authentication."""
-        return any(path.startswith(endpoint) or path == endpoint 
-                  for endpoint in PUBLIC_ENDPOINTS)
+        return path in PUBLIC_ENDPOINTS
     
     def _is_agent_secret_endpoint(self, path: str) -> bool:
         """Check if endpoint uses agent secret key authentication."""
