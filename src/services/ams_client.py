@@ -1,0 +1,370 @@
+"""
+AMS (Agent Management Service) HTTP client with caching and error handling.
+"""
+
+import time
+from typing import Dict, List, Optional, Any
+import httpx
+import structlog
+
+from src.config.settings import get_settings
+from src.models.requests import CreateAgentRequest, UpgradeAgentRequest
+from src.models.responses import UserProfile, AgentInstance, AgentSummary
+from src.utils.cache import cache_manager, cached_user_profile, cached_agent_ownership
+from src.utils.metrics import metrics
+from src.utils.exceptions import UpstreamError, RequestTimeoutError, NotFoundError
+from src.middleware.circuit_breaker import circuit_breaker, CircuitBreakerConfig
+
+logger = structlog.get_logger(__name__)
+
+
+class AMSClient:
+    """HTTP client for AMS (Agent Management Service) with caching and resilience."""
+    
+    def __init__(self, settings=None):
+        self.settings = settings or get_settings()
+        self.base_url = str(self.settings.ams_base_url).rstrip('/')
+        self.timeout = self.settings.request_timeout
+        
+        # Configure HTTP client
+        self.client = httpx.AsyncClient(
+            base_url=self.base_url,
+            timeout=httpx.Timeout(self.timeout),
+            headers={
+                "User-Agent": f"AI-Agent-Gateway/{self.settings.version}",
+                "Content-Type": "application/json"
+            },
+            limits=httpx.Limits(
+                max_keepalive_connections=20,
+                max_connections=100
+            )
+        )
+    
+    async def close(self):
+        """Close HTTP client."""
+        await self.client.aclose()
+    
+    async def _make_request(
+        self,
+        method: str,
+        path: str,
+        user_id: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
+        json_data: Optional[Dict[str, Any]] = None,
+        params: Optional[Dict[str, Any]] = None
+    ) -> httpx.Response:
+        """Make HTTP request with error handling and metrics."""
+        start_time = time.time()
+        
+        # Prepare headers
+        request_headers = {}
+        if user_id:
+            request_headers["X-User-Id"] = user_id
+        if headers:
+            request_headers.update(headers)
+        
+        try:
+            response = await self.client.request(
+                method=method,
+                url=path,
+                headers=request_headers,
+                json=json_data,
+                params=params
+            )
+            
+            duration = time.time() - start_time
+            
+            # Record metrics
+            metrics.record_upstream_request("ams", response.status_code, duration)
+            
+            # Log request
+            logger.debug(
+                "AMS request completed",
+                method=method,
+                path=path,
+                status_code=response.status_code,
+                duration_ms=round(duration * 1000, 2)
+            )
+            
+            # Handle error status codes
+            if response.status_code >= 400:
+                error_detail = None
+                try:
+                    error_detail = response.json()
+                except Exception:
+                    error_detail = response.text
+                
+                if response.status_code == 404:
+                    raise NotFoundError(
+                        f"AMS resource not found: {path}",
+                        context={"status_code": response.status_code, "detail": error_detail}
+                    )
+                else:
+                    raise UpstreamError(
+                        f"AMS request failed: {response.status_code}",
+                        service_name="ams",
+                        upstream_status=response.status_code,
+                        context={"detail": error_detail}
+                    )
+            
+            return response
+            
+        except httpx.TimeoutException:
+            duration = time.time() - start_time
+            metrics.record_upstream_request("ams", 408, duration)
+            
+            raise RequestTimeoutError(
+                "AMS request timeout",
+                timeout_seconds=self.timeout,
+                context={"method": method, "path": path}
+            )
+        
+        except httpx.RequestError as e:
+            duration = time.time() - start_time
+            metrics.record_upstream_request("ams", 502, duration)
+            
+            raise UpstreamError(
+                f"AMS connection error: {str(e)}",
+                service_name="ams",
+                context={"method": method, "path": path, "error": str(e)}
+            )
+    
+    async def get_user_profile(self, user_id: str) -> UserProfile:
+        """Get user profile with agents from AMS."""
+        logger.info("Fetching user profile from AMS", user_id=user_id)
+        
+        response = await self._make_request(
+            method="GET",
+            path="/me",
+            user_id=user_id
+        )
+        
+        data = response.json()
+        
+        # Convert to UserProfile model
+        return UserProfile(**data)
+    
+    async def create_agent(
+        self,
+        user_id: str,
+        request_data: CreateAgentRequest,
+        idempotency_key: Optional[str] = None
+    ) -> AgentInstance:
+        """Create a new agent via AMS."""
+        logger.info(
+            "Creating agent via AMS",
+            user_id=user_id,
+            agent_name=request_data.name,
+            idempotency_key=idempotency_key
+        )
+        
+        headers = {}
+        if idempotency_key:
+            headers["X-Idempotency-Key"] = idempotency_key
+        
+        response = await self._make_request(
+            method="POST",
+            path="/agents/create",
+            user_id=user_id,
+            headers=headers,
+            json_data=request_data.dict(exclude_none=True)
+        )
+        
+        data = response.json()
+        
+        # Invalidate user profile cache
+        await self._invalidate_user_cache(user_id)
+        
+        return AgentInstance(**data)
+    
+    async def upgrade_agent(
+        self,
+        user_id: str,
+        agent_id: str,
+        request_data: UpgradeAgentRequest,
+        idempotency_key: Optional[str] = None
+    ) -> AgentInstance:
+        """Upgrade an agent via AMS."""
+        # First verify ownership
+        await self._verify_agent_ownership(user_id, agent_id)
+        
+        logger.info(
+            "Upgrading agent via AMS",
+            user_id=user_id,
+            agent_id=agent_id,
+            target_version=request_data.target_version,
+            idempotency_key=idempotency_key
+        )
+        
+        headers = {}
+        if idempotency_key:
+            headers["X-Idempotency-Key"] = idempotency_key
+        
+        response = await self._make_request(
+            method="POST",
+            path=f"/agents/{agent_id}/upgrade",
+            user_id=user_id,
+            headers=headers,
+            json_data=request_data.dict(exclude_none=True)
+        )
+        
+        data = response.json()
+        
+        # Invalidate caches
+        await self._invalidate_user_cache(user_id)
+        await self._invalidate_agent_ownership_cache(agent_id)
+        
+        return AgentInstance(**data)
+    
+    async def validate_template(
+        self,
+        template_content: str,
+        template_format: str = "yaml"
+    ) -> Dict[str, Any]:
+        """Validate template content via AMS."""
+        logger.info(
+            "Validating template via AMS",
+            format=template_format,
+            content_length=len(template_content)
+        )
+        
+        response = await self._make_request(
+            method="POST",
+            path="/templates/validate",
+            json_data={
+                "template_content": template_content,
+                "template_format": template_format,
+                "strict_validation": True
+            }
+        )
+        
+        return response.json()
+    
+    async def publish_template(
+        self,
+        user_id: str,
+        template_id: str,
+        version: str,
+        is_public: bool = False,
+        changelog: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        idempotency_key: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Publish template via AMS."""
+        logger.info(
+            "Publishing template via AMS",
+            user_id=user_id,
+            template_id=template_id,
+            version=version,
+            is_public=is_public,
+            idempotency_key=idempotency_key
+        )
+        
+        headers = {}
+        if idempotency_key:
+            headers["X-Idempotency-Key"] = idempotency_key
+        
+        response = await self._make_request(
+            method="POST",
+            path="/templates/publish",
+            user_id=user_id,
+            headers=headers,
+            json_data={
+                "template_id": template_id,
+                "version": version,
+                "is_public": is_public,
+                "changelog": changelog,
+                "tags": tags or []
+            }
+        )
+        
+        return response.json()
+    
+    async def verify_agent_ownership(self, user_id: str, agent_id: str) -> bool:
+        """Verify that user owns the specified agent."""
+        try:
+            response = await self._make_request(
+                method="GET",
+                path=f"/agents/{agent_id}/ownership",
+                user_id=user_id
+            )
+            
+            data = response.json()
+            return data.get("owner_id") == user_id
+            
+        except NotFoundError:
+            return False
+    
+    async def _verify_agent_ownership(self, user_id: str, agent_id: str):
+        """Verify agent ownership and raise exception if not owned."""
+        if not await self.verify_agent_ownership(user_id, agent_id):
+            raise NotFoundError(
+                f"Agent {agent_id} not found or not owned by user",
+                context={"user_id": user_id, "agent_id": agent_id}
+            )
+    
+    async def _invalidate_user_cache(self, user_id: str):
+        """Invalidate user-related cache entries."""
+        cache_keys = [
+            f"user_profile:{user_id}",
+            f"agent_ownership:*:{user_id}"  # Pattern for ownership cache
+        ]
+        
+        for key in cache_keys:
+            if "*" in key:
+                # Clear pattern-based keys
+                await cache_manager.clear_cache_pattern(key)
+            else:
+                await cache_manager.delete(key)
+    
+    async def _invalidate_agent_ownership_cache(self, agent_id: str):
+        """Invalidate agent ownership cache."""
+        # Clear all ownership entries for this agent
+        await cache_manager.clear_cache_pattern(f"agent_ownership:{agent_id}:*")
+    
+    async def get_agent_details(self, user_id: str, agent_id: str) -> AgentInstance:
+        """Get detailed agent information."""
+        await self._verify_agent_ownership(user_id, agent_id)
+        
+        response = await self._make_request(
+            method="GET",
+            path=f"/agents/{agent_id}",
+            user_id=user_id
+        )
+        
+        data = response.json()
+        return AgentInstance(**data)
+    
+    async def list_user_agents(self, user_id: str) -> List[AgentSummary]:
+        """List all agents for a user."""
+        response = await self._make_request(
+            method="GET",
+            path="/agents",
+            user_id=user_id
+        )
+        
+        data = response.json()
+        return [AgentSummary(**agent) for agent in data.get("agents", [])]
+
+
+# Global client instance
+_ams_client: Optional[AMSClient] = None
+
+
+async def get_ams_client() -> AMSClient:
+    """Get or create AMS client instance."""
+    global _ams_client
+    
+    if _ams_client is None:
+        _ams_client = AMSClient()  # Use regular client for now
+    
+    return _ams_client
+
+
+async def close_ams_client():
+    """Close AMS client."""
+    global _ams_client
+    
+    if _ams_client:
+        await _ams_client.close()
+        _ams_client = None

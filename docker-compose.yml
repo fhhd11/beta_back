@@ -1,0 +1,164 @@
+version: '3.8'
+
+services:
+  # AI Agent Platform API Gateway
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD_DATE: ${BUILD_DATE:-2025-09-21T05:09:00Z}
+        VCS_REF: ${VCS_REF:-dev}
+        VERSION: ${VERSION:-1.0.0}
+    container_name: ai-agent-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      # Application settings
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEBUG: ${DEBUG:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      
+      # Service URLs (required)
+      AMS_BASE_URL: ${AMS_BASE_URL}
+      LETTA_BASE_URL: ${LETTA_BASE_URL}
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL}
+      SUPABASE_URL: ${SUPABASE_URL}
+      
+      # Authentication (required)
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      LETTA_API_KEY: ${LETTA_API_KEY}
+      AGENT_SECRET_MASTER_KEY: ${AGENT_SECRET_MASTER_KEY}
+      
+      # Performance settings
+      MAX_CONCURRENT_REQUESTS: ${MAX_CONCURRENT_REQUESTS:-1000}
+      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-30.0}
+      LETTA_TIMEOUT: ${LETTA_TIMEOUT:-60.0}
+      
+      # Feature flags
+      ENABLE_RATE_LIMITING: ${ENABLE_RATE_LIMITING:-true}
+      ENABLE_CACHING: ${ENABLE_CACHING:-true}
+      ENABLE_METRICS: ${ENABLE_METRICS:-true}
+      ENABLE_DOCS: ${ENABLE_DOCS:-true}
+      
+      # CORS configuration
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3001}
+      
+      # Redis configuration
+      REDIS_URL: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: ${REDIS_DB:-0}
+      
+      # Rate limiting
+      RATE_LIMIT_GENERAL: ${RATE_LIMIT_GENERAL:-1000}
+      RATE_LIMIT_LLM: ${RATE_LIMIT_LLM:-100}
+      RATE_LIMIT_PROXY: ${RATE_LIMIT_PROXY:-500}
+      
+      # Circuit breaker settings
+      CIRCUIT_BREAKER_FAILURE_THRESHOLD: ${CIRCUIT_BREAKER_FAILURE_THRESHOLD:-5}
+      CIRCUIT_BREAKER_RECOVERY_TIMEOUT: ${CIRCUIT_BREAKER_RECOVERY_TIMEOUT:-60}
+    
+    depends_on:
+      redis:
+        condition: service_healthy
+    
+    volumes:
+      - gateway_logs:/app/logs
+      - gateway_tmp:/app/tmp
+    
+    networks:
+      - gateway_network
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gateway.rule=Host(`api.example.com`)"
+      - "traefik.http.services.gateway.loadbalancer.server.port=8000"
+
+  # Redis for caching and rate limiting
+  redis:
+    image: redis:7-alpine
+    container_name: ai-agent-redis
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - gateway_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Prometheus for metrics collection (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ai-agent-prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - gateway_network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Grafana for metrics visualization (optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ai-agent-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - gateway_network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+volumes:
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  gateway_logs:
+    driver: local
+  gateway_tmp:
+    driver: local
+
+networks:
+  gateway_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

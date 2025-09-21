@@ -1,0 +1,169 @@
+"""
+Structured logging configuration with correlation IDs and performance monitoring.
+"""
+
+import logging
+import sys
+from typing import Any, Dict, Optional
+
+import structlog
+from structlog.typing import Processor
+
+
+def setup_logging(log_level: str = "INFO", log_format: str = "json") -> None:
+    """
+    Setup structured logging with correlation IDs and performance monitoring.
+    
+    Args:
+        log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        log_format: Log format ("json" or "console")
+    """
+    # Configure standard library logging
+    logging.basicConfig(
+        format="%(message)s",
+        stream=sys.stdout,
+        level=getattr(logging, log_level.upper()),
+    )
+    
+    # Configure structlog processors
+    processors: list[Processor] = [
+        # Add correlation ID from context
+        add_correlation_id,
+        # Add timestamp
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.add_logger_name,
+        structlog.processors.TimeStamper(fmt="iso"),
+        # Add caller info for errors
+        structlog.processors.CallsiteParameterAdder(
+            parameters=[structlog.processors.CallsiteParameter.FILENAME,
+                       structlog.processors.CallsiteParameter.FUNC_NAME,
+                       structlog.processors.CallsiteParameter.LINENO]
+        ),
+        # Stack info for exceptions
+        structlog.processors.format_exc_info,
+        # Filter sensitive data
+        filter_sensitive_data,
+    ]
+    
+    if log_format == "json":
+        processors.append(structlog.processors.JSONRenderer())
+    else:
+        processors.extend([
+            structlog.dev.ConsoleRenderer(colors=True),
+        ])
+    
+    # Configure structlog
+    structlog.configure(
+        processors=processors,
+        wrapper_class=structlog.stdlib.BoundLogger,
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        context_class=dict,
+        cache_logger_on_first_use=True,
+    )
+    
+    # Suppress noisy third-party loggers in production
+    if log_level in ["WARNING", "ERROR", "CRITICAL"]:
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
+        logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+
+
+def add_correlation_id(logger: Any, method_name: str, event_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Add correlation ID from request context to log events."""
+    import contextvars
+    
+    # Try to get request ID from context
+    try:
+        from src.utils.context import request_id_var
+        request_id = request_id_var.get(None)
+        if request_id:
+            event_dict["request_id"] = request_id
+    except (ImportError, LookupError):
+        pass
+    
+    # Try to get user ID from context
+    try:
+        from src.utils.context import user_id_var
+        user_id = user_id_var.get(None)
+        if user_id:
+            event_dict["user_id"] = user_id
+    except (ImportError, LookupError):
+        pass
+    
+    return event_dict
+
+
+def filter_sensitive_data(logger: Any, method_name: str, event_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Filter sensitive data from log events."""
+    sensitive_keys = {
+        "password", "token", "secret", "key", "authorization", 
+        "jwt", "api_key", "bearer", "auth", "credential"
+    }
+    
+    def _filter_dict(data: Dict[str, Any]) -> Dict[str, Any]:
+        """Recursively filter sensitive keys from dictionary."""
+        filtered = {}
+        for key, value in data.items():
+            key_lower = key.lower()
+            
+            # Check if key contains sensitive information
+            if any(sensitive in key_lower for sensitive in sensitive_keys):
+                filtered[key] = "***REDACTED***"
+            elif isinstance(value, dict):
+                filtered[key] = _filter_dict(value)
+            elif isinstance(value, list):
+                filtered[key] = [
+                    _filter_dict(item) if isinstance(item, dict) else item
+                    for item in value
+                ]
+            else:
+                filtered[key] = value
+        
+        return filtered
+    
+    # Filter the event dictionary
+    return _filter_dict(event_dict)
+
+
+class PerformanceLogger:
+    """Context manager for logging performance metrics."""
+    
+    def __init__(self, operation: str, logger: Optional[Any] = None):
+        self.operation = operation
+        self.logger = logger or structlog.get_logger()
+        self.start_time: Optional[float] = None
+    
+    def __enter__(self):
+        import time
+        self.start_time = time.time()
+        self.logger.debug(f"{self.operation} started")
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        import time
+        if self.start_time:
+            duration = time.time() - self.start_time
+            duration_ms = round(duration * 1000, 2)
+            
+            if exc_type:
+                self.logger.error(
+                    f"{self.operation} failed",
+                    duration_ms=duration_ms,
+                    error=str(exc_val) if exc_val else None
+                )
+            else:
+                self.logger.info(
+                    f"{self.operation} completed",
+                    duration_ms=duration_ms
+                )
+
+
+def get_logger(name: str) -> Any:
+    """Get a structured logger instance."""
+    return structlog.get_logger(name)
+
+
+# Convenience function for performance logging
+def log_performance(operation: str, logger: Optional[Any] = None):
+    """Decorator or context manager for performance logging."""
+    return PerformanceLogger(operation, logger)

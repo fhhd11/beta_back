@@ -1,0 +1,163 @@
+version: '3.8'
+
+services:
+  # AI Agent Platform API Gateway - Production
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+      args:
+        BUILD_DATE: ${BUILD_DATE}
+        VCS_REF: ${VCS_REF}
+        VERSION: ${VERSION}
+    container_name: ai-agent-gateway-prod
+    ports:
+      - "8000:8000"
+    environment:
+      ENVIRONMENT: production
+      DEBUG: false
+      LOG_LEVEL: INFO
+      LOG_FORMAT: json
+      ENABLE_DOCS: false  # Disable in production
+      
+      # Service URLs (from secrets/environment)
+      AMS_BASE_URL: ${AMS_BASE_URL}
+      LETTA_BASE_URL: ${LETTA_BASE_URL}
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL}
+      SUPABASE_URL: ${SUPABASE_URL}
+      
+      # Authentication (from secrets)
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET}
+      LETTA_API_KEY: ${LETTA_API_KEY}
+      AGENT_SECRET_MASTER_KEY: ${AGENT_SECRET_MASTER_KEY}
+      
+      # Performance settings
+      MAX_CONCURRENT_REQUESTS: ${MAX_CONCURRENT_REQUESTS:-2000}
+      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-30.0}
+      LETTA_TIMEOUT: ${LETTA_TIMEOUT:-60.0}
+      
+      # Features
+      ENABLE_RATE_LIMITING: ${ENABLE_RATE_LIMITING:-true}
+      ENABLE_CACHING: ${ENABLE_CACHING:-true}
+      ENABLE_METRICS: ${ENABLE_METRICS:-true}
+      
+      # CORS
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      
+      # Redis
+      REDIS_URL: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      
+      # Rate limiting (production values)
+      RATE_LIMIT_GENERAL: ${RATE_LIMIT_GENERAL:-2000}
+      RATE_LIMIT_LLM: ${RATE_LIMIT_LLM:-200}
+      RATE_LIMIT_PROXY: ${RATE_LIMIT_PROXY:-1000}
+    
+    depends_on:
+      redis:
+        condition: service_healthy
+    
+    volumes:
+      - gateway_logs:/app/logs
+    
+    networks:
+      - gateway_network
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gateway.rule=Host(`api.yourdomain.com`)"
+      - "traefik.http.routers.gateway.tls=true"
+      - "traefik.http.routers.gateway.tls.certresolver=letsencrypt"
+      - "traefik.http.services.gateway.loadbalancer.server.port=8000"
+      - "traefik.http.middlewares.gateway-ratelimit.ratelimit.burst=100"
+
+  # Redis - Production Configuration
+  redis:
+    image: redis:7-alpine
+    container_name: ai-agent-redis-prod
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 2gb
+      --maxmemory-policy allkeys-lru
+      --requirepass ${REDIS_PASSWORD}
+    ports:
+      - "127.0.0.1:6379:6379"  # Bind to localhost only
+    volumes:
+      - redis_data:/data
+      - ./redis.conf:/etc/redis/redis.conf:ro
+    networks:
+      - gateway_network
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 2G
+        reservations:
+          cpus: '0.25'
+          memory: 1G
+
+  # Nginx Reverse Proxy (optional)
+  nginx:
+    image: nginx:alpine
+    container_name: ai-agent-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - gateway
+    networks:
+      - gateway_network
+    restart: unless-stopped
+    profiles:
+      - nginx
+
+volumes:
+  redis_data:
+    driver: local
+  gateway_logs:
+    driver: local
+
+networks:
+  gateway_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
