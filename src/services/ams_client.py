@@ -376,16 +376,18 @@ class AMSClient:
     async def verify_agent_ownership(self, user_id: str, agent_id: str) -> bool:
         """Verify that user owns the specified agent."""
         try:
-            response = await self._make_request(
-                method="GET",
-                path=f"/agents/{agent_id}/ownership",
-                user_id=user_id
-            )
+            # Get user profile to check if agent is in their agents list
+            user_profile = await self.get_user_profile(user_id)
             
-            data = response.json()
-            return data.get("owner_id") == user_id
+            # Check if the agent_id exists in the user's agents
+            for agent in user_profile.agents:
+                if agent.agent_id == agent_id:
+                    return True
             
-        except NotFoundError:
+            return False
+            
+        except Exception:
+            # If we can't verify ownership, assume not owned for security
             return False
     
     async def _verify_agent_ownership(self, user_id: str, agent_id: str):
