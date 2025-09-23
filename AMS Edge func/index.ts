@@ -574,12 +574,6 @@ async function resolveTemplateVersion(templateId, version, useLatest = false) {
 function buildAgentConfigFromTemplate(agentFile, userId) {
   if (!PROXY_SERVICE_URL) throw new Error("Missing proxy service URL");
   
-  // Get the agent secret master key from environment
-  const AGENT_SECRET_MASTER_KEY = Deno.env.get("AGENT_SECRET_MASTER_KEY");
-  if (!AGENT_SECRET_MASTER_KEY) {
-    throw new Error("Missing AGENT_SECRET_MASTER_KEY environment variable");
-  }
-  
   // Use the new proxy endpoint path for Letta agents
   // Letta will automatically append /chat/completions to this URL
   const endpoint = `${PROXY_SERVICE_URL}/api/v1/agents/${userId}/proxy`;
@@ -601,15 +595,13 @@ function buildAgentConfigFromTemplate(agentFile, userId) {
       model: agentFile.engine.model,
       model_endpoint: endpoint,
       model_endpoint_type: "openai",
-      context_window: 8192,
-      api_key: AGENT_SECRET_MASTER_KEY
+      context_window: 8192
     },
     embedding_config: {
       embedding_model: agentFile.engine.embedding,
       embedding_endpoint: endpoint,
       embedding_endpoint_type: "openai",
-      embedding_dim: 1536,
-      api_key: AGENT_SECRET_MASTER_KEY
+      embedding_dim: 1536
     },
     tools: [
       "send_message",
