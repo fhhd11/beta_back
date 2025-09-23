@@ -27,6 +27,7 @@ ALLOWED_OPERATIONS = {
     # Message operations
     r"^GET /v1/agents/([^/]+)/messages$": "GET /v1/agents/{id}/messages",
     r"^POST /v1/agents/([^/]+)/messages$": "POST /v1/agents/{id}/messages",
+    r"^POST /v1/agents/([^/]+)/messages/stream$": "POST /v1/agents/{id}/messages/stream",
     
     # Memory operations
     r"^GET /v1/agents/([^/]+)/memory$": "GET /v1/agents/{id}/memory",
