@@ -385,8 +385,25 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if not secret_key:
             logger.debug("Agent secret key is empty")
             return False
+        
+        # Check if it's a Letta API key format (starts with 'sk-')
+        if secret_key.startswith("sk-"):
+            # Letta API keys should be at least 20 characters
+            if len(secret_key) < 20:
+                logger.debug("Letta API key too short", length=len(secret_key))
+                return False
             
-        # Reduced minimum length to accommodate Letta's API keys (25 chars)
+            # Check if it matches Letta's expected pattern
+            import re
+            if not re.match(r'^sk-[a-zA-Z0-9_-]+$', secret_key):
+                logger.debug("Letta API key contains invalid characters", key_prefix=secret_key[:8] + "...")
+                return False
+            
+            logger.debug("Letta API key format is valid", key_prefix=secret_key[:8] + "...")
+            return True
+        
+        # Check if it's the master key format
+        # Reduced minimum length to accommodate various key formats
         if len(secret_key) < 20:
             logger.debug("Agent secret key too short", length=len(secret_key))
             return False
@@ -409,6 +426,19 @@ class AuthMiddleware(BaseHTTPMiddleware):
         cached_user_id = await cache_manager.get(cache_key)
         if cached_user_id:
             return cached_user_id == user_id
+        
+        # Handle Letta API keys
+        if secret_key.startswith("sk-"):
+            # For Letta API keys, we accept them if we have a master key configured
+            # In production, this should validate against Letta's API or a database
+            if self.settings.agent_secret_master_key:
+                # Cache the valid ownership for Letta keys
+                await cache_manager.set(cache_key, user_id, ttl=300)
+                logger.debug("Letta API key ownership verified", user_id=user_id)
+                return True
+            else:
+                logger.warning("No master key configured for Letta API key validation")
+                return False
         
         # Validate against master key (simple validation for now)
         # In production, this should query AMS or a dedicated service

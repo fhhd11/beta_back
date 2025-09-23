@@ -21,7 +21,8 @@ router = APIRouter()
     "/{path:path}",
     methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     summary="Unified Letta Proxy",
-    description="Intelligent proxy for all Letta operations with path rewriting and security filtering"
+    description="Intelligent proxy for all Letta operations with path rewriting and security filtering",
+    operation_id="letta_proxy_catch_all"
 )
 async def letta_proxy(
     request: Request,

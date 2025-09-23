@@ -21,7 +21,8 @@ router = APIRouter()
     "/{path:path}",
     methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     summary="AMS Proxy",
-    description="Unified proxy for all AMS operations with path rewriting and security filtering"
+    description="Unified proxy for all AMS operations with path rewriting and security filtering",
+    operation_id="ams_proxy_catch_all"
 )
 async def ams_proxy(
     request: Request,
