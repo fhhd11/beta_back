@@ -173,7 +173,7 @@ class ResilientLLMProxyClient(LLMProxyClient):
 _llm_proxy_client: Optional[LLMProxyClient] = None
 
 
-async def get_llm_proxy_client() -> LLMProxyClient:
+def get_llm_proxy_client() -> LLMProxyClient:
     """Get or create LLM proxy client instance."""
     global _llm_proxy_client
     
@@ -254,7 +254,7 @@ async def agent_llm_proxy(
     
     # Get LLM proxy client
     try:
-        llm_client = await get_llm_proxy_client()
+        llm_client = get_llm_proxy_client()
         logger.debug(
             "LLM client initialized",
             user_id=user_id,
