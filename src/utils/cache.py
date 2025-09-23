@@ -328,6 +328,23 @@ class CacheManager:
             return 0.0
         
         return total_hits / total
+    
+    async def clear_cache_pattern(self, pattern: str) -> int:
+        """Clear all cache keys matching a pattern."""
+        try:
+            redis = await self._get_redis()
+            keys = await redis.keys(pattern)
+            
+            if keys:
+                await redis.delete(*keys)
+                logger.info("Cache pattern cleared", pattern=pattern, count=len(keys))
+                return len(keys)
+            
+            return 0
+            
+        except Exception as e:
+            logger.warning("Cache pattern clear failed", pattern=pattern, error=str(e))
+            return 0
 
 
 # Global cache manager instance

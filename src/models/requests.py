@@ -30,7 +30,7 @@ class CreateAgentRequest(BaseModel):
         return v
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "template_id": "test-bot",
                 "use_latest": True,
@@ -55,7 +55,7 @@ class UpgradeAgentRequest(BaseModel):
     config_updates: Optional[Dict[str, Any]] = Field(None, description="Configuration updates to apply (not used by AMS)")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "target_version": "2.0.0",
                 "use_latest": False,
@@ -82,7 +82,7 @@ class SendMessageRequest(BaseModel):
         return v
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "message": "Hello, can you help me with my account?",
                 "role": "user",
@@ -119,7 +119,7 @@ class UpdateMemoryRequest(BaseModel):
         return v
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "memory_type": "core",
                 "content": "User prefers concise responses and technical details",
@@ -136,7 +136,7 @@ class ArchivalMemoryRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "content": "User mentioned they work in healthcare and prefer HIPAA-compliant solutions",
                 "tags": ["healthcare", "compliance", "preferences"],
@@ -185,7 +185,7 @@ class TemplateValidationRequest(BaseModel):
         return v
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "template_content": "name: Support Agent\ndescription: Customer support template\nconfig:\n  model: gpt-4\n  temperature: 0.7",
                 "template_format": "yaml",
@@ -203,7 +203,7 @@ class PublishTemplateRequest(BaseModel):
     tags: Optional[List[str]] = Field(None, description="Tags for categorization")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "template_id": "template_123",
                 "version": "1.0.0",
@@ -240,7 +240,7 @@ class LLMProxyRequest(BaseModel):
         return v
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "model": "gpt-4",
                 "messages": [
@@ -272,7 +272,7 @@ class BulkOperationRequest(BaseModel):
         return v
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "operation": "update_agents",
                 "items": [
