@@ -20,7 +20,7 @@ from src.config.logging import setup_logging
 from src.middleware.auth import AuthMiddleware
 from src.middleware.rate_limit import RateLimitMiddleware
 from src.middleware.circuit_breaker import CircuitBreakerMiddleware
-from src.routers import system, user, letta, agents, templates, llm_proxy
+from src.routers import system, user, letta, agents, templates, llm_proxy, ams
 from src.utils.metrics import setup_metrics, request_duration, request_counter
 from src.utils.cache import get_redis_client
 from src.utils.exceptions import setup_exception_handlers
@@ -223,8 +223,9 @@ async def request_response_logging(request: Request, call_next):
 app.include_router(system.router, tags=["System"])
 app.include_router(user.router, prefix="/api/v1", tags=["User Management"])
 app.include_router(letta.router, prefix="/api/v1/letta", tags=["Letta Proxy"])
-app.include_router(agents.router, prefix="/api/v1/agents", tags=["Agent Management"])
-app.include_router(templates.router, prefix="/api/v1/templates", tags=["Template Management"])
+app.include_router(ams.router, prefix="/api/v1/ams", tags=["AMS Proxy"])
+app.include_router(agents.router, prefix="/api/v1/agents", tags=["Agent Management (Legacy)"])
+app.include_router(templates.router, prefix="/api/v1/templates", tags=["Template Management (Legacy)"])
 app.include_router(llm_proxy.router, prefix="/api/v1/agents", tags=["LLM Proxy"])
 
 # Prometheus metrics endpoint
