@@ -38,7 +38,8 @@ PUBLIC_ENDPOINTS: Set[str] = {
 
 # Agent Secret Key endpoints (different auth method)
 AGENT_SECRET_ENDPOINTS: Set[str] = {
-    "/api/v1/agents/{user_id}/proxy"
+    "/api/v1/agents/{user_id}/proxy",
+    "/api/v1/agents/{user_id}/proxy/chat/completions"
 }
 
 
