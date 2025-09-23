@@ -68,7 +68,7 @@ class UpgradeAgentRequest(BaseModel):
 class SendMessageRequest(BaseModel):
     """Request model for sending a message to a Letta agent."""
     message: str = Field(..., min_length=1, max_length=10000, description="Message content")
-    role: str = Field("user", description="Message role (user, system, assistant)")
+    role: str = Field("user", description="Message role (user, system, assistant, function, tool, human, ai, persona, memory, context)")
     stream: bool = Field(False, description="Whether to stream the response")
     include_metadata: bool = Field(True, description="Whether to include response metadata")
     context: Optional[Dict[str, Any]] = Field(None, description="Additional context for the message")
@@ -76,7 +76,13 @@ class SendMessageRequest(BaseModel):
     @validator('role')
     def validate_role(cls, v):
         """Validate message role."""
-        allowed_roles = ["user", "system", "assistant"]
+        # Extended list of supported message roles for AI platforms
+        allowed_roles = [
+            "user", "assistant", "system",  # Standard OpenAI roles
+            "function", "tool", "function_call",  # Function calling roles
+            "human", "ai", "bot",  # Alternative naming conventions
+            "persona", "memory", "context"  # Letta-specific roles
+        ]
         if v not in allowed_roles:
             raise ValueError(f"Role must be one of: {allowed_roles}")
         return v
@@ -229,15 +235,23 @@ class LLMProxyRequest(BaseModel):
         if not v:
             raise ValueError("Messages cannot be empty")
         
+        # Extended list of supported message roles for AI platforms
+        allowed_roles = [
+            "user", "assistant", "system",  # Standard OpenAI roles
+            "function", "tool", "function_call",  # Function calling roles
+            "human", "ai", "bot",  # Alternative naming conventions
+            "persona", "memory", "context"  # Letta-specific roles
+        ]
+        
         for msg in v:
             if not isinstance(msg, dict):
                 raise ValueError("Each message must be a dictionary")
             if "role" not in msg:
                 raise ValueError("Each message must have 'role' field")
-            if msg["role"] not in ["user", "assistant", "system"]:
-                raise ValueError("Message role must be 'user', 'assistant', or 'system'")
+            if msg["role"] not in allowed_roles:
+                raise ValueError(f"Message role must be one of: {allowed_roles}")
             
-            # Content or tool_calls should be present
+            # Content or tool_calls should be present (but allow empty content for some roles)
             if "content" not in msg and "tool_calls" not in msg:
                 raise ValueError("Each message must have either 'content' or 'tool_calls' field")
             
