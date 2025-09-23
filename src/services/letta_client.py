@@ -197,7 +197,8 @@ class LettaClient:
                 url=letta_path,
                 headers=request_headers,
                 json_data=json_data,
-                user_id=user_id
+                user_id=user_id,
+                full_url=f"{self.base_url}{letta_path}"
             )
             
             response = await self.client.request(
@@ -222,6 +223,25 @@ class LettaClient:
                 status_code=response.status_code,
                 duration_ms=round(duration * 1000, 2)
             )
+            
+            # Log response details for debugging
+            if response.status_code >= 400:
+                try:
+                    response_text = response.text
+                    logger.warning(
+                        "Letta error response",
+                        status_code=response.status_code,
+                        response_text=response_text,
+                        url=letta_path,
+                        method=method
+                    )
+                except Exception:
+                    logger.warning(
+                        "Letta error response (could not read text)",
+                        status_code=response.status_code,
+                        url=letta_path,
+                        method=method
+                    )
             
             # Handle error status codes
             if response.status_code >= 400:

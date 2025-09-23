@@ -217,3 +217,41 @@ async def add_to_letta_agent_archival_memory(
     """Add to Letta agent archival memory."""
     letta_client = await get_letta_client()
     return await letta_client.add_archival_memory(user_id, agent_id, archival_request)
+
+
+@router.get("/test-paths")
+async def test_letta_paths(current_user: User = Depends(get_current_user)):
+    """Test different Letta API paths to understand the correct format."""
+    letta_client = await get_letta_client()
+    
+    test_paths = [
+        "/",
+        "/health", 
+        "/api/v1/agents",
+        "/v1/agents",
+        "/agents",
+        f"/agents/{current_user.id}",
+        f"/api/v1/agents/{current_user.id}",
+        f"/v1/agents/{current_user.id}"
+    ]
+    
+    results = {}
+    for path in test_paths:
+        try:
+            response = await letta_client._make_request("GET", path, user_id=current_user.id)
+            results[path] = {
+                "status_code": response.status_code,
+                "success": response.status_code < 400
+            }
+        except Exception as e:
+            results[path] = {
+                "status_code": None,
+                "success": False,
+                "error": str(e)
+            }
+    
+    return {
+        "user_id": current_user.id,
+        "base_url": letta_client.base_url,
+        "test_results": results
+    }
