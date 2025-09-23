@@ -273,6 +273,44 @@ async def agent_llm_proxy(
             content={"error": "Failed to initialize LLM client", "detail": str(e)}
         )
     
+    # Get user's LiteLLM API key from AMS
+    try:
+        from src.services.ams_client import AMSClient
+        ams_client = AMSClient()
+        user_profile = await ams_client.get_user_profile(user_id)
+        
+        if not user_profile or not user_profile.get("litellm_key"):
+            logger.error(
+                "User LiteLLM key not found",
+                user_id=user_id,
+                profile_exists=bool(user_profile),
+                has_litellm_key=bool(user_profile.get("litellm_key") if user_profile else False)
+            )
+            return JSONResponse(
+                status_code=400,
+                content={"error": "User LiteLLM key not found", "detail": "User profile does not have a LiteLLM API key configured"}
+            )
+        
+        litellm_key = user_profile["litellm_key"]
+        logger.debug(
+            "User LiteLLM key retrieved",
+            user_id=user_id,
+            key_prefix=litellm_key[:8] + "..." if litellm_key else "None"
+        )
+        
+    except Exception as e:
+        logger.error(
+            "Failed to get user LiteLLM key",
+            user_id=user_id,
+            error=str(e),
+            error_type=type(e).__name__,
+            exc_info=True
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Failed to retrieve user LiteLLM key", "detail": str(e)}
+        )
+    
     # Add user context for billing
     enhanced_request = request_body.copy()
     enhanced_request["user"] = user_id  # For billing attribution
@@ -297,9 +335,15 @@ async def agent_llm_proxy(
     start_time = time.time()
     
     try:
+        # Add LiteLLM API key to headers
+        headers = {
+            "Authorization": f"Bearer {litellm_key}"
+        }
+        
         response = await llm_client.client.post(
             "/chat/completions",
-            json=enhanced_request
+            json=enhanced_request,
+            headers=headers
         )
         
         duration = time.time() - start_time
