@@ -63,14 +63,16 @@ class LettaClient:
             api_key_present=bool(self.api_key)
         )
         
-        # Configure HTTP client
+        # Configure HTTP client according to Letta API documentation
+        # Letta uses API tokens in Authorization header
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=httpx.Timeout(self.timeout),
             headers={
                 "User-Agent": f"AI-Agent-Gateway/{self.settings.version}",
                 "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "Accept": "application/json"
             },
             limits=httpx.Limits(
                 max_keepalive_connections=20,
@@ -81,6 +83,25 @@ class LettaClient:
     async def close(self):
         """Close HTTP client."""
         await self.client.aclose()
+    
+    async def health_check(self) -> dict:
+        """
+        Check Letta server health according to API documentation.
+        GET /health endpoint as documented in https://docs.letta.com/api-reference/overview
+        """
+        try:
+            response = await self.client.get("/health")
+            return {
+                "status": "healthy" if response.status_code == 200 else "unhealthy",
+                "status_code": response.status_code,
+                "response": response.json() if response.headers.get("content-type", "").startswith("application/json") else response.text
+            }
+        except Exception as e:
+            logger.error("Letta health check failed", error=str(e))
+            return {
+                "status": "error",
+                "error": str(e)
+            }
     
     def _rewrite_path(self, original_path: str, method: str) -> Optional[str]:
         """
@@ -184,8 +205,12 @@ class LettaClient:
             )
         
         # Prepare headers
+        # Add user context headers if user_id provided
+        # Note: Letta uses API tokens for authentication, not user IDs
+        # The user_id is used for filtering/context, not authentication
         request_headers = {}
         if user_id:
+            # Letta may use X-User-Id for context, but authentication is via API token
             request_headers["X-User-Id"] = user_id
         if headers:
             request_headers.update(headers)

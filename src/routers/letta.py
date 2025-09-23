@@ -219,20 +219,44 @@ async def add_to_letta_agent_archival_memory(
     return await letta_client.add_archival_memory(user_id, agent_id, archival_request)
 
 
+@router.get("/health")
+async def letta_health():
+    """Health check for Letta service using official /health endpoint."""
+    try:
+        letta_client = await get_letta_client()
+        health_result = await letta_client.health_check()
+        
+        if health_result["status"] == "healthy":
+            return {
+                "status": "healthy",
+                "letta_health": health_result
+            }
+        else:
+            logger.error("Letta health check failed", result=health_result)
+            raise HTTPException(
+                status_code=503, 
+                detail=f"Letta service unhealthy: {health_result}"
+            )
+    except Exception as e:
+        logger.error("Letta health check failed", error=str(e))
+        raise HTTPException(status_code=503, detail="Letta service unavailable")
+
+
 @router.get("/test-paths")
 async def test_letta_paths(current_user: User = Depends(get_current_user)):
     """Test different Letta API paths to understand the correct format."""
     letta_client = await get_letta_client()
     
+    # Test paths based on official Letta API documentation
+    # https://docs.letta.com/api-reference/overview
     test_paths = [
-        "/",
-        "/health", 
-        "/api/v1/agents",
-        "/v1/agents",
-        "/agents",
-        f"/agents/{current_user.id}",
-        f"/api/v1/agents/{current_user.id}",
-        f"/v1/agents/{current_user.id}"
+        "/health",  # Official health check endpoint
+        "/agents",  # Official agents list endpoint
+        "/",        # Root endpoint
+        f"/agents/{current_user.id}",  # User-specific agent access
+        "/models",  # Models endpoint
+        "/blocks",  # Blocks endpoint
+        "/tools",   # Tools endpoint
     ]
     
     results = {}
@@ -250,8 +274,12 @@ async def test_letta_paths(current_user: User = Depends(get_current_user)):
                 "error": str(e)
             }
     
+    # Also test the official health endpoint
+    health_result = await letta_client.health_check()
+    
     return {
         "user_id": current_user.id,
         "base_url": letta_client.base_url,
+        "health_check": health_result,
         "test_results": results
     }
