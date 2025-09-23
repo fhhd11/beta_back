@@ -3,6 +3,7 @@ Internal agent-to-LLM proxy with Agent Secret Key authentication.
 """
 
 import time
+import json
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse
@@ -340,65 +341,141 @@ async def agent_llm_proxy(
             "Authorization": f"Bearer {litellm_key}"
         }
         
-        response = await llm_client.client.post(
-            "/chat/completions",
-            json=enhanced_request,
-            headers=headers
-        )
+        # Check if this is a streaming request
+        is_streaming = enhanced_request.get("stream", False)
         
-        duration = time.time() - start_time
+        if is_streaming:
+            # Handle streaming response
+            logger.debug(
+                "Handling streaming request",
+                user_id=user_id,
+                model=model
+            )
+            
+            # For streaming, we need to stream the response directly
+            from fastapi.responses import StreamingResponse
+            import asyncio
+            
+            async def stream_generator():
+                try:
+                    async with llm_client.client.stream(
+                        "POST",
+                        "/chat/completions",
+                        json=enhanced_request,
+                        headers=headers
+                    ) as response:
+                        duration = time.time() - start_time
+                        
+                        # Record metrics
+                        from src.utils.metrics import metrics
+                        metrics.record_upstream_request("litellm", response.status_code, duration)
+                        
+                        logger.debug(
+                            "LLM streaming request started",
+                            user_id=user_id,
+                            model=model,
+                            status_code=response.status_code
+                        )
+                        
+                        if response.status_code >= 400:
+                            # For errors, return error as text
+                            error_text = await response.aread()
+                            logger.error(
+                                "LLM streaming error",
+                                user_id=user_id,
+                                model=model,
+                                status_code=response.status_code,
+                                error_text=error_text.decode() if error_text else "Unknown error"
+                            )
+                            yield f"data: {error_text.decode() if error_text else 'Unknown error'}\n\n"
+                            return
+                        
+                        # Stream the response chunks
+                        async for chunk in response.aiter_bytes():
+                            if chunk:
+                                yield chunk
+                                
+                except Exception as e:
+                    logger.error(
+                        "Streaming error",
+                        user_id=user_id,
+                        model=model,
+                        error=str(e),
+                        exc_info=True
+                    )
+                    yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            
+            return StreamingResponse(
+                stream_generator(),
+                media_type="text/plain",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "Content-Type": "text/plain; charset=utf-8"
+                }
+            )
         
-        # Record metrics
-        from src.utils.metrics import metrics
-        metrics.record_upstream_request("litellm", response.status_code, duration)
-        
-        # Log request
-        logger.debug(
-            "LLM proxy request completed",
-            user_id=user_id,
-            model=model,
-            status_code=response.status_code,
-            duration_ms=round(duration * 1000, 2)
-        )
-        
-        # Return response as-is (including errors from LLM service)
-        if response.status_code >= 400:
-            # For errors, return the error response from LLM service
-            try:
-                error_detail = response.json()
-            except Exception:
-                error_detail = {"error": response.text}
+        else:
+            # Handle non-streaming response
+            response = await llm_client.client.post(
+                "/chat/completions",
+                json=enhanced_request,
+                headers=headers
+            )
+            
+            duration = time.time() - start_time
+            
+            # Record metrics
+            from src.utils.metrics import metrics
+            metrics.record_upstream_request("litellm", response.status_code, duration)
+            
+            # Log request
+            logger.debug(
+                "LLM proxy request completed",
+                user_id=user_id,
+                model=model,
+                status_code=response.status_code,
+                duration_ms=round(duration * 1000, 2)
+            )
+            
+            # Return response as-is (including errors from LLM service)
+            if response.status_code >= 400:
+                # For errors, return the error response from LLM service
+                try:
+                    error_detail = response.json()
+                except Exception:
+                    error_detail = {"error": response.text}
+                
+                return JSONResponse(
+                    status_code=response.status_code,
+                    content=error_detail
+                )
+            
+            # For successful responses, return as-is
+            response_data = response.json()
+            
+            # Log usage for billing
+            usage = response_data.get("usage", {})
+            logger.info(
+                "LLM request completed",
+                user_id=user_id,
+                model=model,
+                prompt_tokens=usage.get("prompt_tokens", 0),
+                completion_tokens=usage.get("completion_tokens", 0),
+                total_tokens=usage.get("total_tokens", 0)
+            )
+            
+            logger.info(
+                "=== LLM PROXY REQUEST SUCCESS ===",
+                user_id=user_id,
+                model=model,
+                status_code=response.status_code
+            )
             
             return JSONResponse(
                 status_code=response.status_code,
-                content=error_detail
+                content=response_data
             )
-        
-        # For successful responses, return as-is
-        response_data = response.json()
-        
-        # Log usage for billing
-        usage = response_data.get("usage", {})
-        logger.info(
-            "LLM request completed",
-            user_id=user_id,
-            model=model,
-            prompt_tokens=usage.get("prompt_tokens", 0),
-            completion_tokens=usage.get("completion_tokens", 0),
-            total_tokens=usage.get("total_tokens", 0)
-        )
-        
-        logger.info(
-            "=== LLM PROXY REQUEST SUCCESS ===",
-            user_id=user_id,
-            model=model,
-            status_code=response.status_code
-        )
-        
-        return JSONResponse(
-            status_code=response.status_code,
-            content=response_data
-        )
         
     except Exception as e:
         logger.error(
