@@ -22,7 +22,7 @@ class UserProfile(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional user metadata")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "user_id": "user_123456789",
                 "email": "user@example.com",
@@ -59,7 +59,7 @@ class AgentSummary(BaseModel):
     message_count: Optional[int] = Field(None, description="Total message count")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "agent_id": "agent_123456789",
                 "name": "Customer Support Agent",
@@ -88,7 +88,7 @@ class AgentInstance(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "agent_id": "agent_123456789",
                 "user_id": "user_123456789",
@@ -130,7 +130,7 @@ class LettaMessage(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(None, description="Message metadata")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "message_id": "msg_123456789",
                 "role": "assistant",
@@ -155,7 +155,7 @@ class LettaAgent(BaseModel):
     config: Optional[Dict[str, Any]] = Field(None, description="Agent configuration")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "id": "letta_agent_123",
                 "name": "Support Agent",
@@ -187,7 +187,7 @@ class TemplateInfo(BaseModel):
     usage_count: Optional[int] = Field(None, description="Number of times used")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "template_id": "template_123456789",
                 "name": "Customer Support Template",
@@ -211,7 +211,7 @@ class ValidationResult(BaseModel):
     schema_version: Optional[str] = Field(None, description="Template schema version")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "is_valid": True,
                 "errors": [],
@@ -230,7 +230,7 @@ class LLMResponse(BaseModel):
     created: int = Field(..., description="Creation timestamp")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "id": "chatcmpl-123456789",
                 "model": "gpt-4",
@@ -263,7 +263,7 @@ class HealthResponse(BaseResponse):
     uptime: Optional[float] = Field(None, description="Uptime in seconds")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "status": "success",
                 "message": "System is healthy",
@@ -296,7 +296,7 @@ class ApiInfo(BaseResponse):
     endpoints: List[Dict[str, str]] = Field(default_factory=list, description="Available endpoints")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "status": "success",
                 "timestamp": "2025-09-21T05:09:00Z",
@@ -322,7 +322,7 @@ class BulkOperationResponse(BaseResponse):
     errors: List[Dict[str, Any]] = Field(default_factory=list, description="Error details")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "status": "success",
                 "message": "Bulk operation completed",

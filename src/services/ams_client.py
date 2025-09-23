@@ -233,10 +233,34 @@ class AMSClient:
         
         data = response.json()
         
+        # Extract agent data from AMS response
+        # AMS returns: {'agent': {...}, 'template_checksum': '...'}
+        agent_data = data.get('agent', {})
+        if not agent_data:
+            raise ValueError("No agent data in AMS response")
+        
+        # Map AMS agent data to our AgentInstance format
+        agent_instance_data = {
+            'agent_id': agent_data.get('id'),
+            'user_id': user_id,  # We know the user_id from the request
+            'name': agent_data.get('name'),
+            'description': agent_data.get('description'),
+            'status': 'active',  # Default status for newly created agents
+            'config': agent_data.get('config', {}),
+            'memory_summary': agent_data.get('memory'),
+            'statistics': {},
+            'created_at': agent_data.get('created_at'),
+            'updated_at': agent_data.get('last_updated'),
+            'metadata': {
+                'template_checksum': data.get('template_checksum'),
+                'letta_agent_id': agent_data.get('id')
+            }
+        }
+        
         # Invalidate user profile cache
         await self._invalidate_user_cache(user_id)
         
-        return AgentInstance(**data)
+        return AgentInstance(**agent_instance_data)
     
     async def upgrade_agent(
         self,
