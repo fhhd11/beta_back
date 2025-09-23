@@ -26,7 +26,7 @@ async def create_agent(
     request: Request,
     agent_request: CreateAgentRequest,
     user_id: str = Depends(get_current_user_id),
-    x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key")
+    x_idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key")
 ):
     """
     Create a new agent through AMS.
@@ -39,7 +39,7 @@ async def create_agent(
     logger.info(
         "Creating agent",
         user_id=user_id,
-        agent_name=agent_request.name,
+        agent_name=agent_request.agent_name,
         template_id=agent_request.template_id,
         idempotency_key=x_idempotency_key
     )
@@ -74,7 +74,7 @@ async def upgrade_agent(
     agent_id: str,
     upgrade_request: UpgradeAgentRequest,
     user_id: str = Depends(get_current_user_id),
-    x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key")
+    x_idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key")
 ):
     """
     Upgrade an agent to a new version.

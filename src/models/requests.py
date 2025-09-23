@@ -10,26 +10,33 @@ import json
 
 class CreateAgentRequest(BaseModel):
     """Request model for creating a new agent."""
-    name: str = Field(..., min_length=1, max_length=100, description="Agent name")
-    description: Optional[str] = Field(None, max_length=1000, description="Agent description")
-    template_id: Optional[str] = Field(None, description="Template ID to use for agent creation")
-    config: Optional[Dict[str, Any]] = Field(None, description="Agent configuration")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata")
+    template_id: str = Field(..., description="Template ID to use for agent creation")
+    version: Optional[str] = Field(None, description="Specific template version to use")
+    use_latest: bool = Field(True, description="Whether to use the latest template version")
+    agent_name: Optional[str] = Field(None, min_length=1, max_length=100, description="Agent name (optional)")
+    variables: Optional[Dict[str, Any]] = Field(None, description="Template variables")
+    
+    # Legacy fields for backward compatibility
+    name: Optional[str] = Field(None, min_length=1, max_length=100, description="Agent name (deprecated, use agent_name)")
+    description: Optional[str] = Field(None, max_length=1000, description="Agent description (not used by AMS)")
+    config: Optional[Dict[str, Any]] = Field(None, description="Agent configuration (not used by AMS)")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata (not used by AMS)")
+    
+    @validator('name', pre=True, always=True)
+    def handle_legacy_name_field(cls, v, values):
+        """Handle backward compatibility for name field."""
+        if v and not values.get('agent_name'):
+            values['agent_name'] = v
+        return v
     
     class Config:
         schema_extra = {
             "example": {
-                "name": "Customer Support Agent",
-                "description": "AI agent for handling customer support queries",
-                "template_id": "template_123",
-                "config": {
-                    "model": "gpt-4",
-                    "temperature": 0.7,
-                    "max_tokens": 2000
-                },
-                "metadata": {
-                    "department": "support",
-                    "priority": "high"
+                "template_id": "test-bot",
+                "use_latest": True,
+                "agent_name": "My Test Agent",
+                "variables": {
+                    "custom_var": "value"
                 }
             }
         }
@@ -38,20 +45,22 @@ class CreateAgentRequest(BaseModel):
 class UpgradeAgentRequest(BaseModel):
     """Request model for upgrading an agent."""
     target_version: str = Field(..., description="Target version for upgrade")
-    preserve_memory: bool = Field(True, description="Whether to preserve agent memory")
-    backup_current: bool = Field(True, description="Whether to backup current agent state")
-    config_updates: Optional[Dict[str, Any]] = Field(None, description="Configuration updates to apply")
+    use_latest: bool = Field(False, description="Whether to use the latest version")
+    dry_run: bool = Field(False, description="Whether to perform a dry run")
+    use_queue: bool = Field(False, description="Whether to queue the upgrade job")
+    
+    # Legacy fields for backward compatibility
+    preserve_memory: bool = Field(True, description="Whether to preserve agent memory (not used by AMS)")
+    backup_current: bool = Field(True, description="Whether to backup current agent state (not used by AMS)")
+    config_updates: Optional[Dict[str, Any]] = Field(None, description="Configuration updates to apply (not used by AMS)")
     
     class Config:
         schema_extra = {
             "example": {
                 "target_version": "2.0.0",
-                "preserve_memory": True,
-                "backup_current": True,
-                "config_updates": {
-                    "model": "gpt-4-turbo",
-                    "max_tokens": 4000
-                }
+                "use_latest": False,
+                "dry_run": True,
+                "use_queue": False
             }
         }
 

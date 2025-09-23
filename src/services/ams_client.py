@@ -198,20 +198,37 @@ class AMSClient:
         logger.info(
             "Creating agent via AMS",
             user_id=user_id,
-            agent_name=request_data.name,
+            template_id=request_data.template_id,
+            agent_name=request_data.agent_name,
             idempotency_key=idempotency_key
         )
         
         headers = {}
         if idempotency_key:
-            headers["X-Idempotency-Key"] = idempotency_key
+            headers["Idempotency-Key"] = idempotency_key  # AMS expects this header name
+        
+        # Prepare payload according to AMS Edge function expectations
+        payload = {
+            "template_id": request_data.template_id,
+            "use_latest": request_data.use_latest
+        }
+        
+        if request_data.version:
+            payload["version"] = request_data.version
+            payload["use_latest"] = False  # If version is specified, don't use latest
+        
+        if request_data.agent_name:
+            payload["agent_name"] = request_data.agent_name
+        
+        if request_data.variables:
+            payload["variables"] = request_data.variables
         
         response = await self._make_request(
             method="POST",
-            path="/agents/create",
+            path="/ams/agents/create",  # Full path to AMS endpoint
             user_id=user_id,
             headers=headers,
-            json_data=request_data.dict(exclude_none=True)
+            json_data=payload
         )
         
         data = response.json()
@@ -242,14 +259,22 @@ class AMSClient:
         
         headers = {}
         if idempotency_key:
-            headers["X-Idempotency-Key"] = idempotency_key
+            headers["Idempotency-Key"] = idempotency_key  # AMS expects this header name
+        
+        # Prepare payload according to AMS Edge function expectations
+        payload = {
+            "target_version": request_data.target_version,
+            "use_latest": request_data.use_latest,
+            "dry_run": request_data.dry_run,
+            "use_queue": request_data.use_queue
+        }
         
         response = await self._make_request(
             method="POST",
-            path=f"/agents/{agent_id}/upgrade",
+            path=f"/ams/agents/{agent_id}/upgrade",  # Full path to AMS endpoint
             user_id=user_id,
             headers=headers,
-            json_data=request_data.dict(exclude_none=True)
+            json_data=payload
         )
         
         data = response.json()
