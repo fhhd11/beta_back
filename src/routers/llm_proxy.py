@@ -5,6 +5,7 @@ Internal agent-to-LLM proxy with Agent Secret Key authentication.
 import time
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, Request, Depends
+from fastapi.responses import JSONResponse
 import httpx
 import structlog
 
@@ -193,20 +194,17 @@ async def close_llm_proxy_client():
 
 @router.post(
     "/{user_id}/proxy",
-    response_model=LLMResponse,
     summary="Agent-to-LLM Proxy",
     description="Internal proxy for agent-to-LLM requests with Agent Secret Key authentication"
 )
 @router.post(
     "/{user_id}/proxy/chat/completions",
-    response_model=LLMResponse,
     summary="Agent-to-LLM Proxy (Chat Completions)",
     description="Internal proxy for agent-to-LLM chat completion requests with Agent Secret Key authentication"
 )
 async def agent_llm_proxy(
     user_id: str,
     request: Request,
-    llm_request: LLMProxyRequest,
     api_key: str = Depends(verify_agent_secret_key)
 ):
     """
@@ -214,38 +212,110 @@ async def agent_llm_proxy(
     
     Features:
     - Agent Secret Key authentication (different from JWT)
+    - Direct passthrough to LLM service without validation
     - User billing context attribution
-    - Rate limiting per user + model combination
-    - Usage logging for billing
-    - Circuit breaker protection
     
     Note: This endpoint uses Agent Secret Key authentication, not JWT.
-    The user_id in the path must match the authenticated agent's owner.
+    We pass requests directly to the LLM service and return responses as-is.
     """
+    # Get raw request body
+    request_body = await request.json()
+    
+    # Extract basic info for logging
+    model = request_body.get("model", "unknown")
+    messages = request_body.get("messages", [])
+    stream = request_body.get("stream", False)
+    
     logger.info(
         "Agent LLM proxy request",
         user_id=user_id,
-        model=llm_request.model,
-        messages_count=len(llm_request.messages),
-        stream=llm_request.stream
+        model=model,
+        messages_count=len(messages),
+        stream=stream
     )
     
     # Get LLM proxy client
     llm_client = await get_llm_proxy_client()
     
-    # Make LLM request
-    response_data = await llm_client.make_llm_request(llm_request, user_id)
+    # Add user context for billing
+    enhanced_request = request_body.copy()
+    enhanced_request["user"] = user_id  # For billing attribution
     
-    # Log usage for billing
-    usage = response_data.get("usage", {})
-    logger.info(
-        "LLM request completed",
-        user_id=user_id,
-        model=llm_request.model,
-        prompt_tokens=usage.get("prompt_tokens", 0),
-        completion_tokens=usage.get("completion_tokens", 0),
-        total_tokens=usage.get("total_tokens", 0)
-    )
+    # Add metadata
+    if "metadata" not in enhanced_request:
+        enhanced_request["metadata"] = {}
+    enhanced_request["metadata"].update({
+        "gateway_version": llm_client.settings.version,
+        "user_id": user_id,
+        "request_timestamp": time.time()
+    })
     
-    return LLMResponse(**response_data)
+    # Make direct request to LLM service
+    start_time = time.time()
+    
+    try:
+        response = await llm_client.client.post(
+            "/chat/completions",
+            json=enhanced_request
+        )
+        
+        duration = time.time() - start_time
+        
+        # Record metrics
+        from src.utils.metrics import metrics
+        metrics.record_upstream_request("litellm", response.status_code, duration)
+        
+        # Log request
+        logger.debug(
+            "LLM proxy request completed",
+            user_id=user_id,
+            model=model,
+            status_code=response.status_code,
+            duration_ms=round(duration * 1000, 2)
+        )
+        
+        # Return response as-is (including errors from LLM service)
+        if response.status_code >= 400:
+            # For errors, return the error response from LLM service
+            try:
+                error_detail = response.json()
+            except Exception:
+                error_detail = {"error": response.text}
+            
+            return JSONResponse(
+                status_code=response.status_code,
+                content=error_detail
+            )
+        
+        # For successful responses, return as-is
+        response_data = response.json()
+        
+        # Log usage for billing
+        usage = response_data.get("usage", {})
+        logger.info(
+            "LLM request completed",
+            user_id=user_id,
+            model=model,
+            prompt_tokens=usage.get("prompt_tokens", 0),
+            completion_tokens=usage.get("completion_tokens", 0),
+            total_tokens=usage.get("total_tokens", 0)
+        )
+        
+        return JSONResponse(
+            status_code=response.status_code,
+            content=response_data
+        )
+        
+    except Exception as e:
+        logger.error(
+            "LLM proxy request failed",
+            user_id=user_id,
+            model=model,
+            error=str(e)
+        )
+        
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Internal proxy error", "detail": str(e)}
+        )
 
