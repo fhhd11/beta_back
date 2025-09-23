@@ -219,7 +219,18 @@ async def agent_llm_proxy(
     We pass requests directly to the LLM service and return responses as-is.
     """
     # Get raw request body
-    request_body = await request.json()
+    try:
+        request_body = await request.json()
+    except Exception as e:
+        logger.error(
+            "Failed to parse request body",
+            user_id=user_id,
+            error=str(e)
+        )
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Invalid JSON in request body", "detail": str(e)}
+        )
     
     # Extract basic info for logging
     model = request_body.get("model", "unknown")
@@ -235,7 +246,23 @@ async def agent_llm_proxy(
     )
     
     # Get LLM proxy client
-    llm_client = await get_llm_proxy_client()
+    try:
+        llm_client = await get_llm_proxy_client()
+        logger.debug(
+            "LLM client initialized",
+            user_id=user_id,
+            base_url=llm_client.base_url
+        )
+    except Exception as e:
+        logger.error(
+            "Failed to get LLM proxy client",
+            user_id=user_id,
+            error=str(e)
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Failed to initialize LLM client", "detail": str(e)}
+        )
     
     # Add user context for billing
     enhanced_request = request_body.copy()
@@ -249,6 +276,13 @@ async def agent_llm_proxy(
         "user_id": user_id,
         "request_timestamp": time.time()
     })
+    
+    logger.debug(
+        "Enhanced request prepared",
+        user_id=user_id,
+        model=model,
+        request_keys=list(enhanced_request.keys())
+    )
     
     # Make direct request to LLM service
     start_time = time.time()
@@ -311,11 +345,13 @@ async def agent_llm_proxy(
             "LLM proxy request failed",
             user_id=user_id,
             model=model,
-            error=str(e)
+            error=str(e),
+            error_type=type(e).__name__,
+            exc_info=True
         )
         
         return JSONResponse(
             status_code=500,
-            content={"error": "Internal proxy error", "detail": str(e)}
+            content={"error": "Internal proxy error", "detail": str(e), "error_type": type(e).__name__}
         )
 
