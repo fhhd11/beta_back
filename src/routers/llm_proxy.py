@@ -15,7 +15,6 @@ from src.models.requests import LLMProxyRequest
 from src.models.responses import LLMResponse
 from src.utils.metrics import metrics
 from src.utils.exceptions import UpstreamError, RequestTimeoutError, AuthorizationError
-from src.middleware.circuit_breaker import circuit_breaker, CircuitBreakerConfig
 
 logger = structlog.get_logger(__name__)
 
@@ -155,17 +154,12 @@ class LLMProxyClient:
             )
 
 
-# Apply circuit breaker to the client
-@circuit_breaker(
-    service_name="litellm",
-    config=CircuitBreakerConfig(
-        service_name="litellm",
-        failure_threshold=5,
-        recovery_timeout=60
-    )
-)
 class ResilientLLMProxyClient(LLMProxyClient):
-    """LLM proxy client with circuit breaker protection."""
+    """LLM proxy client with circuit breaker protection.
+    
+    Note: Circuit breaker protection is handled by CircuitBreakerMiddleware
+    in the main application middleware stack, not at the class level.
+    """
     pass
 
 
