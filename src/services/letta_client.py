@@ -21,27 +21,27 @@ logger = structlog.get_logger(__name__)
 # Whitelist of allowed Letta operations
 ALLOWED_OPERATIONS = {
     # Agent operations
-    r"^GET /agents$": "GET /agents",
-    r"^GET /agents/([^/]+)$": "GET /agents/{id}",
+    r"^GET /v1/agents$": "GET /v1/agents",
+    r"^GET /v1/agents/([^/]+)$": "GET /v1/agents/{id}",
     
     # Message operations
-    r"^GET /agents/([^/]+)/messages$": "GET /agents/{id}/messages",
-    r"^POST /agents/([^/]+)/messages$": "POST /agents/{id}/messages",
+    r"^GET /v1/agents/([^/]+)/messages$": "GET /v1/agents/{id}/messages",
+    r"^POST /v1/agents/([^/]+)/messages$": "POST /v1/agents/{id}/messages",
     
     # Memory operations
-    r"^GET /agents/([^/]+)/memory$": "GET /agents/{id}/memory",
-    r"^PUT /agents/([^/]+)/memory$": "PUT /agents/{id}/memory",
+    r"^GET /v1/agents/([^/]+)/memory$": "GET /v1/agents/{id}/memory",
+    r"^PUT /v1/agents/([^/]+)/memory$": "PUT /v1/agents/{id}/memory",
     
     # Archival memory operations
-    r"^GET /agents/([^/]+)/archival$": "GET /agents/{id}/archival",
-    r"^POST /agents/([^/]+)/archival$": "POST /agents/{id}/archival",
+    r"^GET /v1/agents/([^/]+)/archival$": "GET /v1/agents/{id}/archival",
+    r"^POST /v1/agents/([^/]+)/archival$": "POST /v1/agents/{id}/archival",
 }
 
 # Blacklisted operations (security filtering)
 BLACKLISTED_OPERATIONS = {
-    r"^POST /agents$",           # Agent creation (only via AMS)
-    r"^PUT /agents/([^/]+)$",    # Agent editing (only via AMS)
-    r"^DELETE /agents/([^/]+)$", # Agent deletion (only via AMS)
+    r"^POST /v1/agents$",           # Agent creation (only via AMS)
+    r"^PUT /v1/agents/([^/]+)$",    # Agent editing (only via AMS)
+    r"^DELETE /v1/agents/([^/]+)$", # Agent deletion (only via AMS)
     r"^/admin/.*$",              # Admin functions
     r"^/users/.*$",              # User functions
 }
@@ -114,7 +114,7 @@ class LettaClient:
         Returns:
             Rewritten Letta API path or None if blocked
         """
-        # Remove /api/v1/letta prefix
+        # Remove /api/v1/letta prefix and add /v1/ prefix for Letta API
         if original_path.startswith("/api/v1/letta"):
             letta_path = original_path[13:]  # Remove /api/v1/letta
         else:
@@ -123,6 +123,10 @@ class LettaClient:
         # Ensure path starts with /
         if not letta_path.startswith("/"):
             letta_path = "/" + letta_path
+            
+        # Add /v1/ prefix for Letta API
+        if not letta_path.startswith("/v1/"):
+            letta_path = "/v1" + letta_path
         
         # Create full operation string for pattern matching
         operation = f"{method} {letta_path}"
