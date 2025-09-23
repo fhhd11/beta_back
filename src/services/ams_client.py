@@ -136,7 +136,7 @@ class AMSClient:
         
         response = await self._make_request(
             method="GET",
-            path="/ams/me",  # Full path to AMS endpoint
+            path="/me",  # Direct path to AMS endpoint
             user_id=user_id
         )
         
@@ -225,7 +225,7 @@ class AMSClient:
         
         response = await self._make_request(
             method="POST",
-            path="/ams/agents/create",  # Full path to AMS endpoint
+            path="/agents/create",  # Direct path to AMS endpoint
             user_id=user_id,
             headers=headers,
             json_data=payload
@@ -271,7 +271,7 @@ class AMSClient:
         
         response = await self._make_request(
             method="POST",
-            path=f"/ams/agents/{agent_id}/upgrade",  # Full path to AMS endpoint
+            path=f"/agents/{agent_id}/upgrade",  # Direct path to AMS endpoint
             user_id=user_id,
             headers=headers,
             json_data=payload

@@ -76,9 +76,10 @@ async def ams_proxy(
                 raise HTTPException(status_code=400, detail="Invalid JSON in request body")
         
         # Forward the request to AMS
+        # Note: AMS Edge function expects paths without /ams prefix
         response = await ams_client._make_request(
             method=request.method,
-            path=f"/ams/{path}",  # Add /ams prefix for AMS Edge function
+            path=f"/{path}",  # Direct path to AMS Edge function
             user_id=user_id,
             headers=headers,
             json_data=json_data
@@ -142,7 +143,7 @@ async def ams_health():
     try:
         response = await ams_client._make_request(
             method="GET",
-            path="/ams/health"
+            path="/health"
         )
         return response.json()
     except Exception as e:
@@ -202,7 +203,7 @@ async def create_agent(
     # Forward to AMS
     response = await ams_client._make_request(
         method="POST",
-        path="/ams/agents/create",
+        path="/agents/create",
         user_id=user_id,
         headers=headers,
         json_data=request_data
@@ -248,7 +249,7 @@ async def upgrade_agent(
     # Forward to AMS
     response = await ams_client._make_request(
         method="POST",
-        path=f"/ams/agents/{agent_id}/upgrade",
+        path=f"/agents/{agent_id}/upgrade",
         user_id=user_id,
         headers=headers,
         json_data=request_data
@@ -277,7 +278,7 @@ async def validate_template(
     # Forward to AMS (templates/validate doesn't need user_id)
     response = await ams_client._make_request(
         method="POST",
-        path="/ams/templates/validate",
+        path="/templates/validate",
         json_data=body.decode('utf-8')
     )
     
@@ -310,7 +311,7 @@ async def publish_template(
     # Forward to AMS
     response = await ams_client._make_request(
         method="POST",
-        path="/ams/templates/publish",
+        path="/templates/publish",
         user_id=user_id,
         headers=headers,
         json_data=body.decode('utf-8')
