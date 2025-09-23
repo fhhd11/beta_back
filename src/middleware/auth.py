@@ -386,7 +386,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
             logger.debug("Agent secret key is empty")
             return False
             
-        if len(secret_key) < 32:
+        # Reduced minimum length to accommodate Letta's API keys (25 chars)
+        if len(secret_key) < 20:
             logger.debug("Agent secret key too short", length=len(secret_key))
             return False
         
