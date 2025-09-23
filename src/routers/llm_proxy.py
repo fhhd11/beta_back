@@ -174,7 +174,10 @@ _llm_proxy_client: Optional[LLMProxyClient] = None
 
 
 def get_llm_proxy_client() -> LLMProxyClient:
-    """Get or create LLM proxy client instance."""
+    """Get or create LLM proxy client instance.
+    
+    Note: This function is synchronous and should NOT be awaited.
+    """
     global _llm_proxy_client
     
     if _llm_proxy_client is None:
@@ -218,6 +221,7 @@ async def agent_llm_proxy(
     Note: This endpoint uses Agent Secret Key authentication, not JWT.
     We pass requests directly to the LLM service and return responses as-is.
     """
+    print("🚀🚀🚀 LLM PROXY ENDPOINT HIT 🚀🚀🚀")
     logger.info(
         "=== LLM PROXY ENDPOINT HIT ===",
         user_id=user_id,
@@ -254,17 +258,21 @@ async def agent_llm_proxy(
     
     # Get LLM proxy client
     try:
+        logger.debug("About to call get_llm_proxy_client()", user_id=user_id)
         llm_client = get_llm_proxy_client()
         logger.debug(
-            "LLM client initialized",
+            "LLM client initialized successfully",
             user_id=user_id,
-            base_url=llm_client.base_url
+            base_url=llm_client.base_url,
+            client_type=type(llm_client).__name__
         )
     except Exception as e:
         logger.error(
             "Failed to get LLM proxy client",
             user_id=user_id,
-            error=str(e)
+            error=str(e),
+            error_type=type(e).__name__,
+            exc_info=True
         )
         return JSONResponse(
             status_code=500,
