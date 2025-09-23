@@ -279,19 +279,19 @@ async def agent_llm_proxy(
         ams_client = AMSClient()
         user_profile = await ams_client.get_user_profile(user_id)
         
-        if not user_profile or not user_profile.get("litellm_key"):
+        if not user_profile or not hasattr(user_profile, 'litellm_key') or not user_profile.litellm_key:
             logger.error(
                 "User LiteLLM key not found",
                 user_id=user_id,
                 profile_exists=bool(user_profile),
-                has_litellm_key=bool(user_profile.get("litellm_key") if user_profile else False)
+                has_litellm_key=bool(getattr(user_profile, 'litellm_key', None) if user_profile else False)
             )
             return JSONResponse(
                 status_code=400,
                 content={"error": "User LiteLLM key not found", "detail": "User profile does not have a LiteLLM API key configured"}
             )
         
-        litellm_key = user_profile["litellm_key"]
+        litellm_key = user_profile.litellm_key
         logger.debug(
             "User LiteLLM key retrieved",
             user_id=user_id,
