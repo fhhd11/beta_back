@@ -217,10 +217,19 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Extract agent secret key
         secret_key = self._extract_agent_secret(request)
         if not secret_key:
+            logger.warning("Missing agent secret key", path=request.url.path)
             raise AuthenticationError(
                 "Missing agent secret key",
                 context={"header": "Authorization"}
             )
+        
+        # Log the secret key for debugging (first few characters for security)
+        logger.debug(
+            "Agent secret key extracted",
+            path=request.url.path,
+            key_prefix=secret_key[:8] + "..." if len(secret_key) > 8 else secret_key,
+            key_length=len(secret_key)
+        )
         
         # Validate agent secret key
         user_id = await self._validate_agent_secret(secret_key, request.url.path)
@@ -373,14 +382,21 @@ class AuthMiddleware(BaseHTTPMiddleware):
     def _is_valid_agent_secret_format(self, secret_key: str) -> bool:
         """Validate agent secret key format."""
         # Basic format validation
-        if not secret_key or len(secret_key) < 32:
+        if not secret_key:
+            logger.debug("Agent secret key is empty")
+            return False
+            
+        if len(secret_key) < 32:
+            logger.debug("Agent secret key too short", length=len(secret_key))
             return False
         
         # Check if it matches expected pattern (alphanumeric + some special chars)
         import re
         if not re.match(r'^[a-zA-Z0-9_-]+$', secret_key):
+            logger.debug("Agent secret key contains invalid characters", key_prefix=secret_key[:8] + "...")
             return False
         
+        logger.debug("Agent secret key format is valid", key_prefix=secret_key[:8] + "...")
         return True
     
     async def _verify_agent_secret_ownership(self, secret_key: str, user_id: str) -> bool:
