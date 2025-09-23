@@ -125,12 +125,24 @@ async def verify_agent_secret_key(request: Request) -> str:
     
     api_key = auth_header[7:]  # Remove "Bearer " prefix
     
+    # Log the keys for debugging (only first few characters for security)
+    logger.debug(
+        "Agent secret key verification",
+        received_key_prefix=api_key[:8] + "...",
+        expected_key_prefix=settings.agent_secret_master_key[:8] + "..." if settings.agent_secret_master_key else "None",
+        keys_match=api_key == settings.agent_secret_master_key
+    )
+    
     # Verify the API key matches the master key
     if api_key != settings.agent_secret_master_key:
-        logger.warning("Invalid agent secret key", key_prefix=api_key[:8] + "...")
+        logger.warning(
+            "Invalid agent secret key", 
+            key_prefix=api_key[:8] + "...",
+            expected_prefix=settings.agent_secret_master_key[:8] + "..." if settings.agent_secret_master_key else "None"
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid agent secret key"
+            detail="Invalid agent secret key format"
         )
     
     logger.debug("Agent secret key verified successfully")
