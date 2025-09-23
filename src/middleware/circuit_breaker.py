@@ -258,7 +258,7 @@ class CircuitBreakerMiddleware(BaseHTTPMiddleware):
         """Initialize circuit breakers for upstream services."""
         services = {
             "ams": {
-                "patterns": ["/api/v1/me", "/api/v1/agents", "/api/v1/templates"],
+                "patterns": ["/api/v1/me", "/api/v1/agents/create", "/api/v1/agents/update", "/api/v1/agents/delete", "/api/v1/templates"],
                 "config": CircuitBreakerConfig(
                     service_name="ams",
                     failure_threshold=self.settings.circuit_breaker_failure_threshold,
@@ -341,7 +341,7 @@ class CircuitBreakerMiddleware(BaseHTTPMiddleware):
     def _get_service_for_path(self, path: str) -> Optional[str]:
         """Determine which service a path belongs to."""
         service_patterns = {
-            "ams": ["/api/v1/me", "/api/v1/agents", "/api/v1/templates"],
+            "ams": ["/api/v1/me", "/api/v1/agents/create", "/api/v1/agents/update", "/api/v1/agents/delete", "/api/v1/templates"],
             "letta": ["/api/v1/letta"],
             "litellm": ["/api/v1/agents/*/proxy"]
         }
