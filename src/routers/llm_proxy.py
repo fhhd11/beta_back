@@ -218,6 +218,12 @@ async def agent_llm_proxy(
     Note: This endpoint uses Agent Secret Key authentication, not JWT.
     We pass requests directly to the LLM service and return responses as-is.
     """
+    logger.info(
+        "=== LLM PROXY ENDPOINT HIT ===",
+        user_id=user_id,
+        api_key_prefix=api_key[:8] + "..." if api_key else "None"
+    )
+    
     # Get raw request body
     try:
         request_body = await request.json()
@@ -238,11 +244,12 @@ async def agent_llm_proxy(
     stream = request_body.get("stream", False)
     
     logger.info(
-        "Agent LLM proxy request",
+        "=== LLM PROXY REQUEST START ===",
         user_id=user_id,
         model=model,
         messages_count=len(messages),
-        stream=stream
+        stream=stream,
+        request_body_keys=list(request_body.keys()) if request_body else []
     )
     
     # Get LLM proxy client
@@ -335,6 +342,13 @@ async def agent_llm_proxy(
             total_tokens=usage.get("total_tokens", 0)
         )
         
+        logger.info(
+            "=== LLM PROXY REQUEST SUCCESS ===",
+            user_id=user_id,
+            model=model,
+            status_code=response.status_code
+        )
+        
         return JSONResponse(
             status_code=response.status_code,
             content=response_data
@@ -342,7 +356,7 @@ async def agent_llm_proxy(
         
     except Exception as e:
         logger.error(
-            "LLM proxy request failed",
+            "=== LLM PROXY REQUEST FAILED ===",
             user_id=user_id,
             model=model,
             error=str(e),
