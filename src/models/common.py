@@ -47,7 +47,7 @@ class ErrorResponse(BaseResponse):
     error: ErrorDetail
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "status": "error",
                 "message": "Validation failed",
@@ -69,7 +69,7 @@ class SuccessResponse(BaseResponse):
     data: Optional[Any] = None
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "status": "success",
                 "message": "Operation completed successfully",
@@ -131,7 +131,7 @@ class UserContext(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional user metadata")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "user_id": "user_123456789",
                 "email": "user@example.com",
@@ -154,7 +154,7 @@ class ServiceHealth(BaseModel):
     last_check: str = Field(default_factory=lambda: datetime.utcnow().isoformat(), description="Last health check time")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "name": "AMS",
                 "status": "healthy",
@@ -174,7 +174,7 @@ class RateLimitInfo(BaseModel):
     retry_after: Optional[int] = Field(None, description="Seconds to wait before retry")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "limit": 1000,
                 "remaining": 750,
@@ -205,7 +205,7 @@ class RequestMetadata(BaseModel):
     idempotency_key: Optional[str] = Field(None, description="Idempotency key for safe retries")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "user_agent": "Mozilla/5.0 (compatible; AI-Agent-Client/1.0)",
                 "client_ip": "192.168.1.100",

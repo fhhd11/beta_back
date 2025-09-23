@@ -243,7 +243,7 @@ async def letta_health():
 
 
 @router.get("/test-paths")
-async def test_letta_paths(current_user: User = Depends(get_current_user)):
+async def test_letta_paths(user_id: str = Depends(get_current_user_id)):
     """Test different Letta API paths to understand the correct format."""
     letta_client = await get_letta_client()
     
@@ -253,7 +253,7 @@ async def test_letta_paths(current_user: User = Depends(get_current_user)):
         "/health",  # Official health check endpoint
         "/agents",  # Official agents list endpoint
         "/",        # Root endpoint
-        f"/agents/{current_user.id}",  # User-specific agent access
+        f"/agents/{user_id}",  # User-specific agent access
         "/models",  # Models endpoint
         "/blocks",  # Blocks endpoint
         "/tools",   # Tools endpoint
@@ -262,7 +262,7 @@ async def test_letta_paths(current_user: User = Depends(get_current_user)):
     results = {}
     for path in test_paths:
         try:
-            response = await letta_client._make_request("GET", path, user_id=current_user.id)
+            response = await letta_client._make_request("GET", path, user_id=user_id)
             results[path] = {
                 "status_code": response.status_code,
                 "success": response.status_code < 400
@@ -278,7 +278,7 @@ async def test_letta_paths(current_user: User = Depends(get_current_user)):
     health_result = await letta_client.health_check()
     
     return {
-        "user_id": current_user.id,
+        "user_id": user_id,
         "base_url": letta_client.base_url,
         "health_check": health_result,
         "test_results": results
