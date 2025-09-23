@@ -105,3 +105,33 @@ async def get_current_user_id(request: Request) -> str:
     """Dependency to get current user ID."""
     user = await get_current_user(request)
     return user.user_id
+
+
+async def verify_agent_secret_key(request: Request) -> str:
+    """
+    Dependency to verify Agent Secret Key authentication.
+    Used for internal agent-to-service communication.
+    """
+    settings = get_settings()
+    
+    # Extract API key from Authorization header
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        logger.warning("Missing or invalid authorization header for agent secret key")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authorization header"
+        )
+    
+    api_key = auth_header[7:]  # Remove "Bearer " prefix
+    
+    # Verify the API key matches the master key
+    if api_key != settings.agent_secret_master_key:
+        logger.warning("Invalid agent secret key", key_prefix=api_key[:8] + "...")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid agent secret key"
+        )
+    
+    logger.debug("Agent secret key verified successfully")
+    return api_key
