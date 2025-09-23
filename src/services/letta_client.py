@@ -21,29 +21,29 @@ logger = structlog.get_logger(__name__)
 # Whitelist of allowed Letta operations
 ALLOWED_OPERATIONS = {
     # Agent operations
-    r"^GET /v1/agents$": "GET /agents",
-    r"^GET /v1/agents/([^/]+)$": "GET /agents/{id}",
+    r"^GET /agents$": "GET /agents",
+    r"^GET /agents/([^/]+)$": "GET /agents/{id}",
     
     # Message operations
-    r"^GET /v1/agents/([^/]+)/messages$": "GET /agents/{id}/messages",
-    r"^POST /v1/agents/([^/]+)/messages$": "POST /agents/{id}/messages",
+    r"^GET /agents/([^/]+)/messages$": "GET /agents/{id}/messages",
+    r"^POST /agents/([^/]+)/messages$": "POST /agents/{id}/messages",
     
     # Memory operations
-    r"^GET /v1/agents/([^/]+)/memory$": "GET /agents/{id}/memory",
-    r"^PUT /v1/agents/([^/]+)/memory$": "PUT /agents/{id}/memory",
+    r"^GET /agents/([^/]+)/memory$": "GET /agents/{id}/memory",
+    r"^PUT /agents/([^/]+)/memory$": "PUT /agents/{id}/memory",
     
     # Archival memory operations
-    r"^GET /v1/agents/([^/]+)/archival$": "GET /agents/{id}/archival",
-    r"^POST /v1/agents/([^/]+)/archival$": "POST /agents/{id}/archival",
+    r"^GET /agents/([^/]+)/archival$": "GET /agents/{id}/archival",
+    r"^POST /agents/([^/]+)/archival$": "POST /agents/{id}/archival",
 }
 
 # Blacklisted operations (security filtering)
 BLACKLISTED_OPERATIONS = {
-    r"^POST /v1/agents$",           # Agent creation (only via AMS)
-    r"^PUT /v1/agents/([^/]+)$",    # Agent editing (only via AMS)
-    r"^DELETE /v1/agents/([^/]+)$", # Agent deletion (only via AMS)
-    r"^/admin/.*$",                 # Admin functions
-    r"^/users/.*$",                 # User functions
+    r"^POST /agents$",           # Agent creation (only via AMS)
+    r"^PUT /agents/([^/]+)$",    # Agent editing (only via AMS)
+    r"^DELETE /agents/([^/]+)$", # Agent deletion (only via AMS)
+    r"^/admin/.*$",              # Admin functions
+    r"^/users/.*$",              # User functions
 }
 
 
