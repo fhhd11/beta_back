@@ -197,11 +197,17 @@ async def close_llm_proxy_client():
     summary="Agent-to-LLM Proxy",
     description="Internal proxy for agent-to-LLM requests with Agent Secret Key authentication"
 )
+@router.post(
+    "/{user_id}/proxy/chat/completions",
+    response_model=LLMResponse,
+    summary="Agent-to-LLM Proxy (Chat Completions)",
+    description="Internal proxy for agent-to-LLM chat completion requests with Agent Secret Key authentication"
+)
 async def agent_llm_proxy(
     user_id: str,
     request: Request,
     llm_request: LLMProxyRequest,
-    authenticated_user_id: str = Depends(get_current_user_id)
+    api_key: str = Depends(verify_agent_secret_key)
 ):
     """
     Internal proxy for agent-to-LLM requests.
@@ -216,16 +222,6 @@ async def agent_llm_proxy(
     Note: This endpoint uses Agent Secret Key authentication, not JWT.
     The user_id in the path must match the authenticated agent's owner.
     """
-    # Verify that the authenticated user (via agent secret) matches the path user_id
-    if authenticated_user_id != user_id:
-        raise AuthorizationError(
-            "Agent secret key does not match specified user ID",
-            context={
-                "path_user_id": user_id,
-                "authenticated_user_id": authenticated_user_id
-            }
-        )
-    
     logger.info(
         "Agent LLM proxy request",
         user_id=user_id,
@@ -253,55 +249,3 @@ async def agent_llm_proxy(
     
     return LLMResponse(**response_data)
 
-
-@router.post(
-    "/{user_id}/proxy/chat/completions",
-    summary="Letta Agent LLM Proxy",
-    description="Internal proxy for Letta agent-to-LLM requests with Agent Secret Key authentication"
-)
-async def letta_agent_llm_proxy(
-    user_id: str,
-    request: Request,
-    llm_request: LLMProxyRequest,
-    api_key: str = Depends(verify_agent_secret_key)
-):
-    """
-    Internal proxy for Letta agent-to-LLM requests.
-    
-    This endpoint is specifically designed for Letta agents to make LLM requests.
-    It uses Agent Secret Key authentication instead of JWT.
-    
-    Features:
-    - Agent Secret Key authentication (for Letta agents)
-    - User billing context attribution
-    - Rate limiting per user + model combination
-    - Usage logging for billing
-    - Circuit breaker protection
-    """
-    logger.info(
-        "Letta agent LLM proxy request",
-        user_id=user_id,
-        model=llm_request.model,
-        messages_count=len(llm_request.messages),
-        stream=llm_request.stream,
-        api_key_prefix=api_key[:8] + "..."
-    )
-    
-    # Get LLM proxy client
-    llm_client = await get_llm_proxy_client()
-    
-    # Make LLM request
-    response_data = await llm_client.make_llm_request(llm_request, user_id)
-    
-    # Log usage for billing
-    usage = response_data.get("usage", {})
-    logger.info(
-        "Letta LLM request completed",
-        user_id=user_id,
-        model=llm_request.model,
-        prompt_tokens=usage.get("prompt_tokens", 0),
-        completion_tokens=usage.get("completion_tokens", 0),
-        total_tokens=usage.get("total_tokens", 0)
-    )
-    
-    return LLMResponse(**response_data)

@@ -574,7 +574,8 @@ async function resolveTemplateVersion(templateId, version, useLatest = false) {
 function buildAgentConfigFromTemplate(agentFile, userId) {
   if (!PROXY_SERVICE_URL) throw new Error("Missing proxy service URL");
   // Use the new proxy endpoint path for Letta agents
-  const endpoint = `${PROXY_SERVICE_URL}/api/v1/agents/${userId}/proxy/chat/completions`;
+  // Letta will automatically append /chat/completions to this URL
+  const endpoint = `${PROXY_SERVICE_URL}/api/v1/agents/${userId}/proxy`;
   return {
     memory_blocks: [
       {
