@@ -217,7 +217,7 @@ class PublishTemplateRequest(BaseModel):
 class LLMProxyRequest(BaseModel):
     """Request model for LLM proxy operations."""
     model: str = Field(..., description="LLM model to use")
-    messages: List[Dict[str, str]] = Field(..., description="Chat messages")
+    messages: List[Dict[str, Any]] = Field(..., description="Chat messages")
     temperature: Optional[float] = Field(None, ge=0.0, le=2.0, description="Sampling temperature")
     max_tokens: Optional[int] = Field(None, ge=1, le=8000, description="Maximum tokens to generate")
     stream: bool = Field(False, description="Whether to stream the response")
@@ -232,10 +232,18 @@ class LLMProxyRequest(BaseModel):
         for msg in v:
             if not isinstance(msg, dict):
                 raise ValueError("Each message must be a dictionary")
-            if "role" not in msg or "content" not in msg:
-                raise ValueError("Each message must have 'role' and 'content' fields")
+            if "role" not in msg:
+                raise ValueError("Each message must have 'role' field")
             if msg["role"] not in ["user", "assistant", "system"]:
                 raise ValueError("Message role must be 'user', 'assistant', or 'system'")
+            
+            # Content or tool_calls should be present
+            if "content" not in msg and "tool_calls" not in msg:
+                raise ValueError("Each message must have either 'content' or 'tool_calls' field")
+            
+            # If content is present, it should be a string or None
+            if "content" in msg and msg["content"] is not None and not isinstance(msg["content"], str):
+                raise ValueError("Message content must be a string or None")
         
         return v
     
