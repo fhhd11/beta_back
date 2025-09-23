@@ -74,7 +74,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             
             # Handle agent secret key authentication
             if self._is_agent_secret_endpoint(request.url.path):
-                logger.debug("Agent secret endpoint", path=request.url.path)
+                logger.info("🔑 AGENT SECRET ENDPOINT DETECTED", path=request.url.path)
                 return await self._handle_agent_secret_auth(request, call_next)
             
             # Handle JWT authentication
@@ -131,12 +131,26 @@ class AuthMiddleware(BaseHTTPMiddleware):
     
     def _is_agent_secret_endpoint(self, path: str) -> bool:
         """Check if endpoint uses agent secret key authentication."""
+        logger.debug(
+            "Checking agent secret endpoint",
+            path=path,
+            patterns=list(AGENT_SECRET_ENDPOINTS)
+        )
+        
         # Check for pattern matching
         for pattern in AGENT_SECRET_ENDPOINTS:
             if "{user_id}" in pattern:
                 # Simple pattern matching for user_id placeholder
                 pattern_parts = pattern.split("/")
                 path_parts = path.split("/")
+                
+                logger.debug(
+                    "Pattern matching",
+                    pattern=pattern,
+                    pattern_parts=pattern_parts,
+                    path_parts=path_parts,
+                    lengths_match=len(pattern_parts) == len(path_parts)
+                )
                 
                 if len(pattern_parts) == len(path_parts):
                     match = True
@@ -147,9 +161,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
                             match = False
                             break
                     
+                    logger.debug(
+                        "Pattern match result",
+                        pattern=pattern,
+                        path=path,
+                        match=match
+                    )
+                    
                     if match:
                         return True
         
+        logger.debug("No agent secret endpoint match found", path=path)
         return False
     
     async def _handle_jwt_auth(self, request: Request, call_next):
