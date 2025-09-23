@@ -185,13 +185,14 @@ class AMSClient:
             email=data.get("email"),
             display_name=data.get("name"),
             role="authenticated",  # Default role
+            litellm_key=data.get("litellm_key"),
+            letta_agent_id=data.get("letta_agent_id"),
+            agent_status=data.get("agent_status"),
             agents=agents_list,
             created_at=data.get("created_at"),
             last_active=data.get("updated_at"),
             metadata={
-                "profile_exists": data.get("profile_exists"),
-                "letta_agent_id": data.get("letta_agent_id"),
-                "agent_status": data.get("agent_status")
+                "profile_exists": data.get("profile_exists")
             }
         )
     
