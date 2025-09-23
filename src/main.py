@@ -224,9 +224,10 @@ app.include_router(system.router, tags=["System"])
 app.include_router(user.router, prefix="/api/v1", tags=["User Management"])
 app.include_router(letta.router, prefix="/api/v1/letta", tags=["Letta Proxy"])
 app.include_router(ams.router, prefix="/api/v1/ams", tags=["AMS Proxy"])
+# LLM Proxy must be registered BEFORE agents router to avoid route conflicts
+app.include_router(llm_proxy.router, prefix="/api/v1/agents", tags=["LLM Proxy"])
 app.include_router(agents.router, prefix="/api/v1/agents", tags=["Agent Management (Legacy)"])
 app.include_router(templates.router, prefix="/api/v1/templates", tags=["Template Management (Legacy)"])
-app.include_router(llm_proxy.router, prefix="/api/v1/agents", tags=["LLM Proxy"])
 
 # Prometheus metrics endpoint
 @app.get("/metrics", include_in_schema=False)
