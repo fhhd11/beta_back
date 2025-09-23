@@ -142,6 +142,13 @@ class AMSClient:
         
         data = response.json()
         
+        logger.info(
+            "User profile data from AMS",
+            user_id=user_id,
+            profile_data=data,
+            agents_data=data.get("agents", {})
+        )
+        
         # Convert AMS response to UserProfile model
         # AMS returns different structure, need to adapt
         agents_data = data.get("agents", {})

@@ -56,6 +56,13 @@ class LettaClient:
         self.timeout = self.settings.letta_timeout
         self.api_key = self.settings.letta_api_key
         
+        logger.info(
+            "LettaClient initialized",
+            base_url=self.base_url,
+            timeout=self.timeout,
+            api_key_present=bool(self.api_key)
+        )
+        
         # Configure HTTP client
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
@@ -184,6 +191,15 @@ class LettaClient:
             request_headers.update(headers)
         
         try:
+            logger.info(
+                "Making request to Letta",
+                method=method,
+                url=letta_path,
+                headers=request_headers,
+                json_data=json_data,
+                user_id=user_id
+            )
+            
             response = await self.client.request(
                 method=method,
                 url=letta_path,
