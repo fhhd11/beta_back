@@ -1,28 +1,61 @@
 """
-Unified Letta proxy router with path rewriting and security filtering.
+Simple Letta proxy router - direct pass-through with blacklist filtering.
 """
 
-from typing import Dict, Any, Optional
+import re
+from typing import Dict, Any
 from fastapi import APIRouter, Request, Depends, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import Response
+import httpx
 import structlog
 
 from src.dependencies.auth import get_current_user_id
-from src.services.letta_client import get_letta_client
-from src.models.requests import SendMessageRequest, UpdateMemoryRequest, ArchivalMemoryRequest
-from src.models.responses import LettaAgent, LettaMessage
+from src.config.settings import get_settings
 
 logger = structlog.get_logger(__name__)
-
 router = APIRouter()
+settings = get_settings()
 
+# Blacklisted operations (security filtering)
+BLACKLISTED_PATTERNS = [
+    r"^/v1/agents$",                    # POST - создание агентов (только через AMS)
+    r"^/v1/agents/[^/]+$",             # PUT/DELETE - редактирование/удаление агентов (только через AMS)
+    r"^/admin/.*$",                    # Админские функции
+    r"^/users/.*$",                    # Пользовательские функции
+]
+
+# HTTP client for Letta
+_letta_client: httpx.AsyncClient = None
+
+async def get_letta_client() -> httpx.AsyncClient:
+    """Get or create Letta HTTP client."""
+    global _letta_client
+    
+    if _letta_client is None:
+        _letta_client = httpx.AsyncClient(
+            base_url=str(settings.letta_base_url).rstrip('/'),
+            timeout=httpx.Timeout(settings.letta_timeout),
+            headers={
+                "Authorization": f"Bearer {settings.letta_api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+        )
+    
+    return _letta_client
+
+def is_blacklisted(path: str) -> bool:
+    """Check if path is blacklisted."""
+    for pattern in BLACKLISTED_PATTERNS:
+        if re.match(pattern, path):
+            return True
+    return False
 
 @router.api_route(
     "/{path:path}",
     methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    summary="Unified Letta Proxy",
-    description="Intelligent proxy for all Letta operations with path rewriting and security filtering",
-    operation_id="letta_proxy_catch_all"
+    summary="Letta Proxy",
+    description="Direct proxy to Letta API with blacklist filtering"
 )
 async def letta_proxy(
     request: Request,
@@ -30,257 +63,102 @@ async def letta_proxy(
     user_id: str = Depends(get_current_user_id)
 ):
     """
-    Unified Letta proxy endpoint that handles all Letta operations.
+    Simple Letta proxy that forwards requests directly to Letta API.
     
     Features:
-    - Path rewriting from /api/v1/letta/* to /v1/*
-    - Security filtering (whitelist/blacklist)
-    - Automatic user ownership validation
-    - Response filtering to hide internal fields
+    - JWT authentication check
+    - Path rewriting: /api/v1/letta/* -> /v1/*
+    - Blacklist filtering for security
+    - Direct pass-through of requests/responses
     """
-    method = request.method
-    full_path = f"/api/v1/letta/{path}" if path else "/api/v1/letta/"
+    # Rewrite path: /api/v1/letta/agents -> /v1/agents
+    letta_path = f"/v1/{path}" if path else "/v1/"
+    
+    # Check blacklist
+    if is_blacklisted(letta_path):
+        logger.warning(
+            "Blocked blacklisted Letta operation",
+            method=request.method,
+            path=letta_path,
+            user_id=user_id
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=f"Operation not allowed: {request.method} {letta_path}"
+        )
     
     logger.info(
         "Letta proxy request",
-        method=method,
-        path=full_path,
+        method=request.method,
+        path=letta_path,
         user_id=user_id
     )
-    
-    # Get request data
-    json_data = None
-    if request.headers.get("content-type", "").startswith("application/json"):
-        try:
-            json_data = await request.json()
-        except Exception:
-            json_data = None
-    
-    # Get query parameters
-    params = dict(request.query_params)
-    
-    # Get headers (filter out auth headers)
-    headers = {}
-    for key, value in request.headers.items():
-        if key.lower() not in ["authorization", "host", "content-length"]:
-            headers[key] = value
     
     try:
         # Get Letta client
         letta_client = await get_letta_client()
         
-        # Proxy the request
-        result = await letta_client.proxy_request(
-            method=method,
-            path=full_path,
-            user_id=user_id,
+        # Prepare request data
+        json_data = None
+        if request.headers.get("content-type", "").startswith("application/json"):
+            try:
+                json_data = await request.json()
+            except Exception:
+                json_data = None
+        
+        # Prepare headers (exclude auth headers)
+        headers = {}
+        for key, value in request.headers.items():
+            if key.lower() not in ["authorization", "host", "content-length"]:
+                headers[key] = value
+        
+        # Add user context
+        headers["X-User-Id"] = user_id
+        
+        # Make request to Letta
+        response = await letta_client.request(
+            method=request.method,
+            url=letta_path,
             headers=headers,
-            json_data=json_data,
-            params=params
+            json=json_data,
+            params=dict(request.query_params)
         )
         
-        # Return response
-        return JSONResponse(
-            status_code=result["status_code"],
-            content=result["data"],
-            headers={k: v for k, v in result["headers"].items() 
-                    if k.lower() not in ["content-length", "transfer-encoding"]}
+        # Return response directly
+        return Response(
+            content=response.content,
+            status_code=response.status_code,
+            headers={
+                k: v for k, v in response.headers.items()
+                if k.lower() not in ["content-length", "transfer-encoding"]
+            },
+            media_type=response.headers.get("content-type")
         )
         
+    except httpx.TimeoutException:
+        logger.error("Letta request timeout", path=letta_path, user_id=user_id)
+        raise HTTPException(status_code=504, detail="Letta service timeout")
+    
+    except httpx.RequestError as e:
+        logger.error("Letta connection error", path=letta_path, user_id=user_id, error=str(e))
+        raise HTTPException(status_code=502, detail="Letta service unavailable")
+    
     except Exception as e:
-        logger.error(
-            "Letta proxy error",
-            method=method,
-            path=full_path,
-            user_id=user_id,
-            error=str(e)
-        )
-        raise
-
-
-# Specific endpoints for better documentation and type safety
-@router.get(
-    "/agents",
-    response_model=list[LettaAgent],
-    summary="List Letta Agents",
-    description="Get list of all Letta agents owned by the user"
-)
-async def list_letta_agents(
-    user_id: str = Depends(get_current_user_id)
-):
-    """List all Letta agents for the current user."""
-    letta_client = await get_letta_client()
-    return await letta_client.list_agents(user_id)
-
-
-@router.get(
-    "/agents/{agent_id}",
-    response_model=LettaAgent,
-    summary="Get Letta Agent",
-    description="Get detailed information about a specific Letta agent"
-)
-async def get_letta_agent(
-    agent_id: str,
-    user_id: str = Depends(get_current_user_id)
-):
-    """Get specific Letta agent details."""
-    letta_client = await get_letta_client()
-    return await letta_client.get_agent(user_id, agent_id)
-
-
-@router.post(
-    "/agents/{agent_id}/messages",
-    summary="Send Message to Letta Agent",
-    description="Send a message to a Letta agent and get the response"
-)
-async def send_message_to_letta_agent(
-    agent_id: str,
-    message_request: SendMessageRequest,
-    user_id: str = Depends(get_current_user_id)
-):
-    """Send message to Letta agent."""
-    letta_client = await get_letta_client()
-    return await letta_client.send_message(user_id, agent_id, message_request)
-
-
-@router.get(
-    "/agents/{agent_id}/messages",
-    response_model=list[LettaMessage],
-    summary="Get Agent Messages",
-    description="Get message history for a Letta agent"
-)
-async def get_letta_agent_messages(
-    agent_id: str,
-    limit: Optional[int] = 50,
-    offset: Optional[int] = 0,
-    user_id: str = Depends(get_current_user_id)
-):
-    """Get message history for Letta agent."""
-    letta_client = await get_letta_client()
-    return await letta_client.get_messages(user_id, agent_id, limit, offset)
-
-
-@router.get(
-    "/agents/{agent_id}/memory",
-    summary="Get Agent Memory",
-    description="Get memory state of a Letta agent"
-)
-async def get_letta_agent_memory(
-    agent_id: str,
-    user_id: str = Depends(get_current_user_id)
-):
-    """Get Letta agent memory."""
-    letta_client = await get_letta_client()
-    return await letta_client.get_memory(user_id, agent_id)
-
-
-@router.put(
-    "/agents/{agent_id}/memory",
-    summary="Update Agent Memory",
-    description="Update memory state of a Letta agent"
-)
-async def update_letta_agent_memory(
-    agent_id: str,
-    memory_request: UpdateMemoryRequest,
-    user_id: str = Depends(get_current_user_id)
-):
-    """Update Letta agent memory."""
-    letta_client = await get_letta_client()
-    return await letta_client.update_memory(user_id, agent_id, memory_request)
-
-
-@router.get(
-    "/agents/{agent_id}/archival",
-    summary="Get Agent Archival Memory",
-    description="Search and retrieve archival memory for a Letta agent"
-)
-async def get_letta_agent_archival_memory(
-    agent_id: str,
-    query: Optional[str] = None,
-    limit: Optional[int] = 10,
-    user_id: str = Depends(get_current_user_id)
-):
-    """Get Letta agent archival memory."""
-    letta_client = await get_letta_client()
-    return await letta_client.get_archival_memory(user_id, agent_id, query, limit)
-
-
-@router.post(
-    "/agents/{agent_id}/archival",
-    summary="Add to Agent Archival Memory",
-    description="Add new content to a Letta agent's archival memory"
-)
-async def add_to_letta_agent_archival_memory(
-    agent_id: str,
-    archival_request: ArchivalMemoryRequest,
-    user_id: str = Depends(get_current_user_id)
-):
-    """Add to Letta agent archival memory."""
-    letta_client = await get_letta_client()
-    return await letta_client.add_archival_memory(user_id, agent_id, archival_request)
-
+        logger.error("Letta proxy error", path=letta_path, user_id=user_id, error=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/health")
 async def letta_health():
-    """Health check for Letta service using official /health endpoint."""
+    """Health check for Letta service."""
     try:
         letta_client = await get_letta_client()
-        health_result = await letta_client.health_check()
+        response = await letta_client.get("/health")
         
-        if health_result["status"] == "healthy":
-            return {
-                "status": "healthy",
-                "letta_health": health_result
-            }
+        if response.status_code == 200:
+            return {"status": "healthy", "letta_health": response.json()}
         else:
-            logger.error("Letta health check failed", result=health_result)
-            raise HTTPException(
-                status_code=503, 
-                detail=f"Letta service unhealthy: {health_result}"
-            )
+            raise HTTPException(status_code=503, detail="Letta service unhealthy")
+            
     except Exception as e:
         logger.error("Letta health check failed", error=str(e))
         raise HTTPException(status_code=503, detail="Letta service unavailable")
-
-
-@router.get("/test-paths")
-async def test_letta_paths(user_id: str = Depends(get_current_user_id)):
-    """Test different Letta API paths to understand the correct format."""
-    letta_client = await get_letta_client()
-    
-    # Test paths based on official Letta API documentation
-    # https://docs.letta.com/api-reference/overview
-    test_paths = [
-        "/health",  # Official health check endpoint
-        "/agents",  # Official agents list endpoint
-        "/",        # Root endpoint
-        f"/agents/{user_id}",  # User-specific agent access
-        "/models",  # Models endpoint
-        "/blocks",  # Blocks endpoint
-        "/tools",   # Tools endpoint
-    ]
-    
-    results = {}
-    for path in test_paths:
-        try:
-            response = await letta_client._make_request("GET", path, user_id=user_id)
-            results[path] = {
-                "status_code": response.status_code,
-                "success": response.status_code < 400
-            }
-        except Exception as e:
-            results[path] = {
-                "status_code": None,
-                "success": False,
-                "error": str(e)
-            }
-    
-    # Also test the official health endpoint
-    health_result = await letta_client.health_check()
-    
-    return {
-        "user_id": user_id,
-        "base_url": letta_client.base_url,
-        "health_check": health_result,
-        "test_results": results
-    }
