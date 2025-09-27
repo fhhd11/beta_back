@@ -28,6 +28,8 @@ BLACKLISTED_PATTERNS = [
 STREAMING_PATTERNS = [
     r"^/v1/agents/[^/]+/messages/stream$",    # Message streaming
     r"^/v1/agents/[^/]+/runs/[^/]+/stream$",  # Run streaming
+    r"^/v1/agents/[^/]+/messages/stream.*$",  # Message streaming with params
+    r"^/v1/agents/[^/]+/runs/[^/]+/stream.*$",  # Run streaming with params
 ]
 
 # HTTP client for Letta
@@ -45,7 +47,9 @@ async def get_letta_client() -> httpx.AsyncClient:
                 "Authorization": f"Bearer {settings.letta_api_key}",
                 "Content-Type": "application/json",
                 "Accept": "application/json"
-            }
+            },
+            # Disable response buffering for streaming
+            follow_redirects=True
         )
     
     return _letta_client
@@ -63,6 +67,31 @@ def is_streaming_endpoint(path: str) -> bool:
         if re.match(pattern, path):
             return True
     return False
+
+@router.get("/debug/streaming-patterns")
+async def debug_streaming_patterns():
+    """Debug endpoint to check streaming patterns."""
+    return {
+        "streaming_patterns": STREAMING_PATTERNS,
+        "blacklisted_patterns": BLACKLISTED_PATTERNS,
+        "test_paths": [
+            "/v1/agents/test-agent/messages/stream",
+            "/v1/agents/test-agent/runs/test-run/stream",
+            "/v1/agents/test-agent/messages/stream?stream_tokens=true",
+        ],
+        "test_results": {
+            path: {
+                "is_streaming": is_streaming_endpoint(path),
+                "is_blacklisted": is_blacklisted(path)
+            }
+            for path in [
+                "/v1/agents/test-agent/messages/stream",
+                "/v1/agents/test-agent/runs/test-run/stream",
+                "/v1/agents/test-agent/messages",
+                "/v1/agents/test-agent/messages/stream?stream_tokens=true",
+            ]
+        }
+    }
 
 @router.api_route(
     "/{path:path}",
@@ -133,20 +162,63 @@ async def letta_proxy(
         # Add user context
         headers["X-User-Id"] = user_id
         
+        # For streaming requests, ensure proper headers
+        if is_streaming:
+            headers["Accept"] = "text/event-stream"
+            headers["Cache-Control"] = "no-cache"
+        
         # Handle streaming vs regular requests
         if is_streaming:
             # Streaming mode
             async def stream_response():
-                async with letta_client.stream(
-                    method=request.method,
-                    url=letta_path,
-                    headers=headers,
-                    json=json_data,
-                    params=dict(request.query_params)
-                ) as response:
-                    # Stream response chunks
-                    async for chunk in response.aiter_bytes():
-                        yield chunk
+                try:
+                    async with letta_client.stream(
+                        method=request.method,
+                        url=letta_path,
+                        headers=headers,
+                        json=json_data,
+                        params=dict(request.query_params)
+                    ) as response:
+                        # Check response status
+                        if response.status_code >= 400:
+                            logger.error(
+                                "Letta streaming error",
+                                status_code=response.status_code,
+                                path=letta_path,
+                                user_id=user_id
+                            )
+                            yield f"data: {response.text}\n\n".encode()
+                            return
+                        
+                        # Stream response chunks immediately
+                        chunk_count = 0
+                        async for chunk in response.aiter_bytes(chunk_size=1024):
+                            if chunk:
+                                chunk_count += 1
+                                logger.debug(
+                                    "Streaming chunk",
+                                    chunk_size=len(chunk),
+                                    chunk_count=chunk_count,
+                                    path=letta_path,
+                                    user_id=user_id
+                                )
+                                yield chunk
+                        
+                        logger.info(
+                            "Streaming completed",
+                            total_chunks=chunk_count,
+                            path=letta_path,
+                            user_id=user_id
+                        )
+                                
+                except Exception as e:
+                    logger.error(
+                        "Streaming error",
+                        path=letta_path,
+                        user_id=user_id,
+                        error=str(e)
+                    )
+                    yield f"data: {{'error': 'Streaming failed: {str(e)}'}}\n\n".encode()
             
             return StreamingResponse(
                 stream_response(),
@@ -156,6 +228,8 @@ async def letta_proxy(
                     "Cache-Control": "no-cache",
                     "Connection": "keep-alive",
                     "X-Accel-Buffering": "no",  # Disable nginx buffering
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Headers": "*",
                 }
             )
         else:
