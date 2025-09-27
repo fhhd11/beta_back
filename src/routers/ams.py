@@ -94,6 +94,8 @@ async def ams_proxy(
         # Remove any sensitive headers
         response_headers.pop("authorization", None)
         response_headers.pop("x-user-id", None)
+        # Remove Content-Length to let FastAPI/uvicorn calculate it automatically
+        response_headers.pop("content-length", None)
         
         logger.info(
             "AMS proxy response",
