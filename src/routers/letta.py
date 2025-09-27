@@ -1,11 +1,11 @@
 """
-Simple Letta proxy router - direct pass-through with blacklist filtering.
+Simple Letta proxy router - direct pass-through with blacklist filtering and streaming support.
 """
 
 import re
 from typing import Dict, Any
 from fastapi import APIRouter, Request, Depends, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 import httpx
 import structlog
 
@@ -22,6 +22,12 @@ BLACKLISTED_PATTERNS = [
     r"^/v1/agents/[^/]+$",             # PUT/DELETE - редактирование/удаление агентов (только через AMS)
     r"^/admin/.*$",                    # Админские функции
     r"^/users/.*$",                    # Пользовательские функции
+]
+
+# Streaming endpoints patterns
+STREAMING_PATTERNS = [
+    r"^/v1/agents/[^/]+/messages/stream$",    # Message streaming
+    r"^/v1/agents/[^/]+/runs/[^/]+/stream$",  # Run streaming
 ]
 
 # HTTP client for Letta
@@ -51,6 +57,13 @@ def is_blacklisted(path: str) -> bool:
             return True
     return False
 
+def is_streaming_endpoint(path: str) -> bool:
+    """Check if path is a streaming endpoint."""
+    for pattern in STREAMING_PATTERNS:
+        if re.match(pattern, path):
+            return True
+    return False
+
 @router.api_route(
     "/{path:path}",
     methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
@@ -69,6 +82,7 @@ async def letta_proxy(
     - JWT authentication check
     - Path rewriting: /api/v1/letta/* -> /v1/*
     - Blacklist filtering for security
+    - Streaming support for streaming endpoints
     - Direct pass-through of requests/responses
     """
     # Rewrite path: /api/v1/letta/agents -> /v1/agents
@@ -87,11 +101,15 @@ async def letta_proxy(
             detail=f"Operation not allowed: {request.method} {letta_path}"
         )
     
+    # Check if this is a streaming endpoint
+    is_streaming = is_streaming_endpoint(letta_path)
+    
     logger.info(
         "Letta proxy request",
         method=request.method,
         path=letta_path,
-        user_id=user_id
+        user_id=user_id,
+        is_streaming=is_streaming
     )
     
     try:
@@ -115,25 +133,51 @@ async def letta_proxy(
         # Add user context
         headers["X-User-Id"] = user_id
         
-        # Make request to Letta
-        response = await letta_client.request(
-            method=request.method,
-            url=letta_path,
-            headers=headers,
-            json=json_data,
-            params=dict(request.query_params)
-        )
-        
-        # Return response directly
-        return Response(
-            content=response.content,
-            status_code=response.status_code,
-            headers={
-                k: v for k, v in response.headers.items()
-                if k.lower() not in ["content-length", "transfer-encoding"]
-            },
-            media_type=response.headers.get("content-type")
-        )
+        # Handle streaming vs regular requests
+        if is_streaming:
+            # Streaming mode
+            async def stream_response():
+                async with letta_client.stream(
+                    method=request.method,
+                    url=letta_path,
+                    headers=headers,
+                    json=json_data,
+                    params=dict(request.query_params)
+                ) as response:
+                    # Stream response chunks
+                    async for chunk in response.aiter_bytes():
+                        yield chunk
+            
+            return StreamingResponse(
+                stream_response(),
+                status_code=200,
+                headers={
+                    "Content-Type": "text/event-stream",
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no",  # Disable nginx buffering
+                }
+            )
+        else:
+            # Regular mode
+            response = await letta_client.request(
+                method=request.method,
+                url=letta_path,
+                headers=headers,
+                json=json_data,
+                params=dict(request.query_params)
+            )
+            
+            # Return response directly
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers={
+                    k: v for k, v in response.headers.items()
+                    if k.lower() not in ["content-length", "transfer-encoding"]
+                },
+                media_type=response.headers.get("content-type")
+            )
         
     except httpx.TimeoutException:
         logger.error("Letta request timeout", path=letta_path, user_id=user_id)
