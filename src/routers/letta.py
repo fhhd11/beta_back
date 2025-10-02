@@ -96,11 +96,21 @@ async def debug_streaming_patterns():
 @router.options("/{path:path}")
 async def letta_options_handler(request: Request, path: str):
     """Handle OPTIONS requests for CORS preflight in Letta proxy."""
-    logger.info("OPTIONS request in Letta proxy", path=path)
+    logger.info(
+        "OPTIONS request in Letta proxy", 
+        path=path,
+        full_url=str(request.url),
+        query_params=str(request.query_params),
+        headers=dict(request.headers)
+    )
+    
+    # Get the origin from the request
+    origin = request.headers.get("origin", "unknown")
+    
     return Response(
         status_code=200,
         headers={
-            "Access-Control-Allow-Origin": "http://localhost:3000",  # Will be overridden by CORS middleware
+            "Access-Control-Allow-Origin": origin if origin in ["http://localhost:3000", "http://localhost:3001", "https://front-beta-production-60e5.up.railway.app"] else "http://localhost:3000",
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
             "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Request-ID, X-User-ID, X-Idempotency-Key, User-Agent, Accept, Origin, Referer, Accept-Language, Content-Language",
             "Access-Control-Allow-Credentials": "true",
@@ -129,6 +139,14 @@ async def letta_proxy(
     - Streaming support for streaming endpoints
     - Direct pass-through of requests/responses
     """
+    logger.info(
+        "Letta proxy called",
+        method=request.method,
+        path=path,
+        full_url=str(request.url),
+        user_id=user_id
+    )
+    
     # Rewrite path: /api/v1/letta/agents -> /v1/agents
     letta_path = f"/v1/{path}" if path else "/v1/"
     
