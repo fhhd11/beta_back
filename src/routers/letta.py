@@ -93,9 +93,24 @@ async def debug_streaming_patterns():
         }
     }
 
+@router.options("/{path:path}")
+async def letta_options_handler(request: Request, path: str):
+    """Handle OPTIONS requests for CORS preflight in Letta proxy."""
+    logger.info("OPTIONS request in Letta proxy", path=path)
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "http://localhost:3000",  # Will be overridden by CORS middleware
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Request-ID, X-User-ID, X-Idempotency-Key, User-Agent, Accept, Origin, Referer, Accept-Language, Content-Language",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Max-Age": "600"
+        }
+    )
+
 @router.api_route(
     "/{path:path}",
-    methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
     summary="Letta Proxy",
     description="Direct proxy to Letta API with blacklist filtering"
 )
