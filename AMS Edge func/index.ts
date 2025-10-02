@@ -316,18 +316,18 @@ async function handleCreateAgent(payload, userId, idempotencyKey) {
       throw insertError;
     }
     console.log("Agent instance saved to database");
-    // Update user_profiles with letta_agent_id
-    console.log("Updating user profile with letta_agent_id...");
+    // Update user_profiles with letta_agent_id + set agent_status=registered
+    console.log("Updating user profile with letta_agent_id and agent_status...");
     const { error: profileUpdateError } = await supabase.from("user_profiles").update({
       letta_agent_id: agent.id,
+      agent_status: "registered",
       updated_at: new Date().toISOString()
     }).eq("id", userId);
     if (profileUpdateError) {
       console.log("Warning: Failed to update user profile:", profileUpdateError);
-    // We don't throw here as the agent was created successfully
-    // This is a non-critical error
+    // агент создан успешно — не валим весь процесс
     } else {
-      console.log("User profile updated with letta_agent_id");
+      console.log("User profile updated with letta_agent_id and agent_status=registered");
     }
     const checksum = await sha256(raw);
     console.log("=== Create Agent Success ===");
@@ -575,11 +575,9 @@ async function resolveTemplateVersion(templateId, version, useLatest = false) {
 }
 function buildAgentConfigFromTemplate(agentFile, userId) {
   if (!PROXY_SERVICE_URL) throw new Error("Missing proxy service URL");
-  
   // Use the new proxy endpoint path for Letta agents
   // Letta will automatically append /chat/completions to this URL
   const endpoint = `${PROXY_SERVICE_URL}/api/v1/agents/${userId}/proxy`;
-  
   return {
     memory_blocks: [
       {

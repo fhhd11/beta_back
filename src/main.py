@@ -109,9 +109,19 @@ app = FastAPI(
 )
 
 # Add CORS middleware
+allowed_origins = settings.allowed_origins
+logger.info("CORS configuration", 
+           allowed_origins=allowed_origins, 
+           origins_str=settings.allowed_origins_str,
+           origins_count=len(allowed_origins))
+
+# Ensure we have valid origins
+if not allowed_origins or allowed_origins == ["*"]:
+    logger.warning("CORS: Using wildcard origins - not recommended for production!")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins,
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=[
@@ -137,6 +147,31 @@ if settings.enable_rate_limiting:
 
 # Setup exception handlers
 setup_exception_handlers(app)
+
+# Add CORS debugging middleware
+@app.middleware("http")
+async def cors_debug_middleware(request: Request, call_next):
+    """Debug CORS requests."""
+    origin = request.headers.get("origin")
+    method = request.method
+    
+    if origin:
+        logger.info(
+            "CORS request",
+            origin=origin,
+            method=method,
+            path=request.url.path,
+            allowed_origins=settings.allowed_origins
+        )
+    
+    response = await call_next(request)
+    
+    # Log CORS headers in response
+    cors_headers = {k: v for k, v in response.headers.items() if k.lower().startswith('access-control')}
+    if cors_headers:
+        logger.info("CORS response headers", headers=cors_headers)
+    
+    return response
 
 # Add request/response logging middleware
 @app.middleware("http")
@@ -242,6 +277,19 @@ async def ping():
     """Simple ping endpoint for load balancer health checks."""
     from datetime import datetime
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat() + "Z"}
+
+
+# CORS debug endpoint
+@app.get("/cors-debug", include_in_schema=False)
+async def cors_debug():
+    """Debug endpoint to check CORS configuration."""
+    return {
+        "allowed_origins": settings.allowed_origins,
+        "origins_str": settings.allowed_origins_str,
+        "origins_count": len(settings.allowed_origins),
+        "environment": settings.environment,
+        "timestamp": datetime.utcnow().isoformat() + "Z"
+    }
 
 
 if __name__ == "__main__":

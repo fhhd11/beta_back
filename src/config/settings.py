@@ -94,20 +94,44 @@ class Settings(BaseSettings):
         """Parse and return CORS origins as a list."""
         origins_str = self.allowed_origins_str
         
+        # Debug logging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"CORS parsing: raw origins_str='{origins_str}', type={type(origins_str)}")
+        
+        # Handle None or empty string
+        if not origins_str or origins_str.strip() == "":
+            logger.warning("CORS parsing: empty origins_str, using wildcard")
+            return ["*"]
+        
         if isinstance(origins_str, str):
             # Handle potential JSON-like strings
             if origins_str.startswith('[') and origins_str.endswith(']'):
                 try:
                     import json
-                    return json.loads(origins_str)
+                    parsed = json.loads(origins_str)
+                    logger.info(f"CORS parsing: JSON parsed successfully: {parsed}")
+                    return parsed
                 except json.JSONDecodeError:
+                    logger.warning(f"CORS parsing: JSON parsing failed, treating as comma-separated")
                     # If JSON parsing fails, treat as comma-separated
                     pass
+            
             # Parse as comma-separated string
-            return [origin.strip() for origin in origins_str.split(",") if origin.strip()]
+            parsed = [origin.strip() for origin in origins_str.split(",") if origin.strip()]
+            logger.info(f"CORS parsing: comma-separated parsed: {parsed}")
+            
+            # Ensure we have at least one origin
+            if not parsed:
+                logger.warning("CORS parsing: no valid origins found, using wildcard")
+                return ["*"]
+            
+            return parsed
         else:
             # If it's already a list (shouldn't happen with env vars, but just in case)
-            return origins_str if isinstance(origins_str, list) else ["*"]
+            result = origins_str if isinstance(origins_str, list) else ["*"]
+            logger.info(f"CORS parsing: already a list or fallback: {result}")
+            return result
     
     @field_validator("environment")
     @classmethod
