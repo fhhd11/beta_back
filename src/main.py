@@ -266,27 +266,14 @@ async def request_response_logging(request: Request, call_next):
         raise
 
 
-# Global OPTIONS handler for CORS preflight - MUST be first!
-@app.options("/{full_path:path}", include_in_schema=False)
-async def options_handler(request: Request):
-    """Handle all OPTIONS requests for CORS preflight."""
-    logger.info("Global OPTIONS handler called", path=request.url.path, query=str(request.query_params))
-    
-    # Get the origin from the request
-    origin = request.headers.get("origin")
-    
-    # Check if origin is allowed
-    if origin in settings.allowed_origins:
-        allow_origin = origin
-    elif "*" in settings.allowed_origins:
-        allow_origin = "*"
-    else:
-        allow_origin = settings.allowed_origins[0] if settings.allowed_origins else "*"
-    
+# Add OPTIONS handlers for main API routes
+@app.options("/api/v1/me", include_in_schema=False)
+async def me_options():
+    """Handle OPTIONS for /api/v1/me."""
     return Response(
         status_code=200,
         headers={
-            "Access-Control-Allow-Origin": allow_origin,
+            "Access-Control-Allow-Origin": "http://localhost:3000",
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
             "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Request-ID, X-User-ID, X-Idempotency-Key, User-Agent, Accept, Origin, Referer, Accept-Language, Content-Language",
             "Access-Control-Allow-Credentials": "true",
