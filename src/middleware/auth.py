@@ -33,7 +33,8 @@ PUBLIC_ENDPOINTS: Set[str] = {
     "/openapi.json",
     "/metrics",
     "/status",
-    "/debug"
+    "/debug",
+    "/cors-debug"
 }
 
 # Agent Secret Key endpoints (different auth method)
@@ -67,6 +68,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         )
         
         try:
+            # Skip authentication for OPTIONS requests (CORS preflight)
+            if request.method == "OPTIONS":
+                logger.debug("OPTIONS request, skipping auth", path=request.url.path)
+                return await call_next(request)
+            
             # Check if endpoint requires authentication
             if self._is_public_endpoint(request.url.path):
                 logger.debug("Public endpoint, skipping auth", path=request.url.path)
