@@ -10,9 +10,9 @@ from typing import Dict, Any
 
 import structlog
 import uvicorn
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from src.config.settings import get_settings
@@ -133,9 +133,12 @@ app.add_middleware(
         "User-Agent",
         "Accept",
         "Origin",
-        "Referer"
+        "Referer",
+        "Accept-Language",
+        "Content-Language"
     ],
-    expose_headers=["X-Request-ID", "X-Rate-Limit-Remaining", "X-Rate-Limit-Reset"]
+    expose_headers=["X-Request-ID", "X-Rate-Limit-Remaining", "X-Rate-Limit-Reset"],
+    max_age=600  # Cache preflight response for 10 minutes
 )
 
 # Add custom middleware (order matters - last added runs first)
@@ -278,6 +281,21 @@ async def ping():
     from datetime import datetime
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat() + "Z"}
 
+
+# Global OPTIONS handler for CORS preflight
+@app.options("/{path:path}", include_in_schema=False)
+async def options_handler(path: str):
+    """Handle all OPTIONS requests for CORS preflight."""
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": "*",  # Will be overridden by CORS middleware
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Request-ID, X-User-ID, X-Idempotency-Key, User-Agent, Accept, Origin, Referer",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Max-Age": "600"
+        }
+    )
 
 # CORS debug endpoint
 @app.get("/cors-debug", include_in_schema=False)
