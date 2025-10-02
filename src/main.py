@@ -164,6 +164,7 @@ async def cors_debug_middleware(request: Request, call_next):
             origin=origin,
             method=method,
             path=request.url.path,
+            query=str(request.query_params),
             allowed_origins=settings.allowed_origins
         )
     
@@ -173,6 +174,14 @@ async def cors_debug_middleware(request: Request, call_next):
     cors_headers = {k: v for k, v in response.headers.items() if k.lower().startswith('access-control')}
     if cors_headers:
         logger.info("CORS response headers", headers=cors_headers)
+    
+    # Log if OPTIONS request returns non-200 status
+    if method == "OPTIONS" and response.status_code != 200:
+        logger.warning(
+            "OPTIONS request returned non-200 status",
+            status_code=response.status_code,
+            path=request.url.path
+        )
     
     return response
 
@@ -257,6 +266,34 @@ async def request_response_logging(request: Request, call_next):
         raise
 
 
+# Global OPTIONS handler for CORS preflight - MUST be first!
+@app.options("/{full_path:path}", include_in_schema=False)
+async def options_handler(request: Request):
+    """Handle all OPTIONS requests for CORS preflight."""
+    logger.info("Global OPTIONS handler called", path=request.url.path, query=str(request.query_params))
+    
+    # Get the origin from the request
+    origin = request.headers.get("origin")
+    
+    # Check if origin is allowed
+    if origin in settings.allowed_origins:
+        allow_origin = origin
+    elif "*" in settings.allowed_origins:
+        allow_origin = "*"
+    else:
+        allow_origin = settings.allowed_origins[0] if settings.allowed_origins else "*"
+    
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": allow_origin,
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Request-ID, X-User-ID, X-Idempotency-Key, User-Agent, Accept, Origin, Referer, Accept-Language, Content-Language",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Max-Age": "600"
+        }
+    )
+
 # Include routers
 app.include_router(system.router, tags=["System"])
 app.include_router(user.router, prefix="/api/v1", tags=["User Management"])
@@ -281,21 +318,6 @@ async def ping():
     from datetime import datetime
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat() + "Z"}
 
-
-# Global OPTIONS handler for CORS preflight
-@app.options("/{path:path}", include_in_schema=False)
-async def options_handler(path: str):
-    """Handle all OPTIONS requests for CORS preflight."""
-    return Response(
-        status_code=200,
-        headers={
-            "Access-Control-Allow-Origin": "*",  # Will be overridden by CORS middleware
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-            "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Request-ID, X-User-ID, X-Idempotency-Key, User-Agent, Accept, Origin, Referer",
-            "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Max-Age": "600"
-        }
-    )
 
 # CORS debug endpoint
 @app.get("/cors-debug", include_in_schema=False)
