@@ -74,6 +74,11 @@ async def debug_streaming_patterns():
     return {
         "streaming_patterns": STREAMING_PATTERNS,
         "blacklisted_patterns": BLACKLISTED_PATTERNS,
+        "stream_tokens_support": {
+            "description": "stream_tokens parameter enables token-level streaming",
+            "supported_in": "request body (json_data.stream_tokens) or query params",
+            "chunk_size": "64 bytes for token streaming, 1024 bytes for regular streaming"
+        },
         "test_paths": [
             "/v1/agents/test-agent/messages/stream",
             "/v1/agents/test-agent/runs/test-run/stream",
@@ -82,7 +87,8 @@ async def debug_streaming_patterns():
         "test_results": {
             path: {
                 "is_streaming": is_streaming_endpoint(path),
-                "is_blacklisted": is_blacklisted(path)
+                "is_blacklisted": is_blacklisted(path),
+                "has_stream_tokens_param": "stream_tokens=true" in path
             }
             for path in [
                 "/v1/agents/test-agent/messages/stream",
@@ -142,25 +148,44 @@ async def letta_proxy(
     # Check if this is a streaming endpoint
     is_streaming = is_streaming_endpoint(letta_path)
     
+    # Prepare request data early for stream_tokens check
+    json_data = None
+    if request.headers.get("content-type", "").startswith("application/json"):
+        try:
+            json_data = await request.json()
+        except Exception:
+            json_data = None
+    
+    # Check if stream_tokens is enabled (for token-level streaming)
+    stream_tokens = False
+    if json_data and isinstance(json_data, dict):
+        stream_tokens = json_data.get("stream_tokens", False)
+    
+    # Also check query params for stream_tokens (backward compatibility)
+    if not stream_tokens:
+        stream_tokens = request.query_params.get("stream_tokens", "").lower() == "true"
+    
+    # Ensure stream_tokens is passed to Letta API in request body
+    if stream_tokens and json_data and isinstance(json_data, dict):
+        json_data["stream_tokens"] = True
+    elif stream_tokens and not json_data:
+        # If no JSON data but stream_tokens is in query params, create JSON data
+        json_data = {"stream_tokens": True}
+    
     logger.info(
         "Letta proxy request",
         method=request.method,
         path=letta_path,
         user_id=user_id,
-        is_streaming=is_streaming
+        is_streaming=is_streaming,
+        stream_tokens=stream_tokens,
+        json_data_keys=list(json_data.keys()) if json_data and isinstance(json_data, dict) else None,
+        query_params=dict(request.query_params)
     )
     
     try:
         # Get Letta client
         letta_client = await get_letta_client()
-        
-        # Prepare request data
-        json_data = None
-        if request.headers.get("content-type", "").startswith("application/json"):
-            try:
-                json_data = await request.json()
-            except Exception:
-                json_data = None
         
         # Prepare headers (exclude auth headers)
         headers = {}
@@ -175,6 +200,11 @@ async def letta_proxy(
         if is_streaming:
             headers["Accept"] = "text/event-stream"
             headers["Cache-Control"] = "no-cache"
+            
+            # For token-level streaming, add specific headers
+            if stream_tokens:
+                headers["Accept"] = "text/event-stream"
+                headers["X-Stream-Tokens"] = "true"
         
         # Handle streaming vs regular requests
         if is_streaming:
@@ -201,7 +231,11 @@ async def letta_proxy(
                         
                         # Stream response chunks immediately
                         chunk_count = 0
-                        async for chunk in response.aiter_bytes(chunk_size=1024):
+                        
+                        # Use smaller chunk size for token streaming to avoid buffering
+                        chunk_size = 64 if stream_tokens else 1024
+                        
+                        async for chunk in response.aiter_bytes(chunk_size=chunk_size):
                             if chunk:
                                 chunk_count += 1
                                 logger.debug(
@@ -209,7 +243,9 @@ async def letta_proxy(
                                     chunk_size=len(chunk),
                                     chunk_count=chunk_count,
                                     path=letta_path,
-                                    user_id=user_id
+                                    user_id=user_id,
+                                    stream_tokens=stream_tokens,
+                                    chunk_size_setting=chunk_size
                                 )
                                 yield chunk
                         
@@ -217,7 +253,9 @@ async def letta_proxy(
                             "Streaming completed",
                             total_chunks=chunk_count,
                             path=letta_path,
-                            user_id=user_id
+                            user_id=user_id,
+                            stream_tokens=stream_tokens,
+                            chunk_size_used=chunk_size
                         )
                                 
                 except Exception as e:
@@ -229,17 +267,25 @@ async def letta_proxy(
                     )
                     yield f"data: {{'error': 'Streaming failed: {str(e)}'}}\n\n".encode()
             
+            # Prepare response headers
+            response_headers = {
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",  # Disable nginx buffering
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "*",
+            }
+            
+            # Add token streaming specific headers
+            if stream_tokens:
+                response_headers["X-Stream-Tokens"] = "true"
+                response_headers["X-Content-Type-Options"] = "nosniff"
+            
             return StreamingResponse(
                 stream_response(),
                 status_code=200,
-                headers={
-                    "Content-Type": "text/event-stream",
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                    "X-Accel-Buffering": "no",  # Disable nginx buffering
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Headers": "*",
-                }
+                headers=response_headers
             )
         else:
             # Regular mode
