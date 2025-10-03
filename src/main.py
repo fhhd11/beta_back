@@ -179,9 +179,37 @@ async def request_logging_middleware(request: Request, call_next):
 # Add CORS debugging middleware
 @app.middleware("http")
 async def cors_debug_middleware(request: Request, call_next):
-    """Debug CORS requests."""
+    """Debug CORS requests and handle OPTIONS directly."""
     origin = request.headers.get("origin")
     method = request.method
+    
+    # Handle OPTIONS requests directly
+    if method == "OPTIONS":
+        logger.info(
+            "OPTIONS request intercepted",
+            origin=origin,
+            path=request.url.path,
+            query=str(request.query_params),
+            allowed_origins=settings.allowed_origins
+        )
+        
+        # Check if origin is allowed
+        allowed_origins = settings.allowed_origins
+        if "*" in allowed_origins or (origin and origin in allowed_origins):
+            allow_origin = origin if origin and origin in allowed_origins else "*"
+        else:
+            allow_origin = allowed_origins[0] if allowed_origins else "*"
+        
+        return Response(
+            status_code=200,
+            headers={
+                "Access-Control-Allow-Origin": allow_origin,
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+                "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Request-ID, X-User-ID, X-Idempotency-Key, User-Agent, Accept, Origin, Referer, Accept-Language, Content-Language",
+                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Max-Age": "600"
+            }
+        )
     
     if origin:
         logger.info(
@@ -199,14 +227,6 @@ async def cors_debug_middleware(request: Request, call_next):
     cors_headers = {k: v for k, v in response.headers.items() if k.lower().startswith('access-control')}
     if cors_headers:
         logger.info("CORS response headers", headers=cors_headers)
-    
-    # Log if OPTIONS request returns non-200 status
-    if method == "OPTIONS" and response.status_code != 200:
-        logger.warning(
-            "OPTIONS request returned non-200 status",
-            status_code=response.status_code,
-            path=request.url.path
-        )
     
     return response
 
