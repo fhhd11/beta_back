@@ -271,12 +271,31 @@ async def letta_proxy(
                             streaming_mode="token-level" if stream_tokens else "regular"
                         )
                                 
+                except httpx.ConnectError as e:
+                    logger.error(
+                        "Letta connection error",
+                        path=letta_path,
+                        user_id=user_id,
+                        error=str(e),
+                        error_type="ConnectError"
+                    )
+                    yield f"data: {{'error': 'Connection to Letta API failed. Please try again.'}}\n\n".encode()
+                except httpx.TimeoutException as e:
+                    logger.error(
+                        "Letta timeout error",
+                        path=letta_path,
+                        user_id=user_id,
+                        error=str(e),
+                        error_type="TimeoutException"
+                    )
+                    yield f"data: {{'error': 'Letta API request timed out. Please try again.'}}\n\n".encode()
                 except Exception as e:
                     logger.error(
                         "Streaming error",
                         path=letta_path,
                         user_id=user_id,
-                        error=str(e)
+                        error=str(e),
+                        error_type=type(e).__name__
                     )
                     yield f"data: {{'error': 'Streaming failed: {str(e)}'}}\n\n".encode()
             
@@ -321,16 +340,44 @@ async def letta_proxy(
                 media_type=response.headers.get("content-type")
             )
         
-    except httpx.TimeoutException:
-        logger.error("Letta request timeout", path=letta_path, user_id=user_id)
+    except httpx.TimeoutException as e:
+        logger.error(
+            "Letta request timeout", 
+            path=letta_path, 
+            user_id=user_id, 
+            error=str(e),
+            error_type="TimeoutException"
+        )
         raise HTTPException(status_code=504, detail="Letta service timeout")
     
+    except httpx.ConnectError as e:
+        logger.error(
+            "Letta connection error", 
+            path=letta_path, 
+            user_id=user_id, 
+            error=str(e),
+            error_type="ConnectError"
+        )
+        raise HTTPException(status_code=502, detail="Letta service unavailable - connection failed")
+    
     except httpx.RequestError as e:
-        logger.error("Letta connection error", path=letta_path, user_id=user_id, error=str(e))
+        logger.error(
+            "Letta request error", 
+            path=letta_path, 
+            user_id=user_id, 
+            error=str(e),
+            error_type="RequestError"
+        )
         raise HTTPException(status_code=502, detail="Letta service unavailable")
     
     except Exception as e:
-        logger.error("Letta proxy error", path=letta_path, user_id=user_id, error=str(e))
+        logger.error(
+            "Letta proxy error", 
+            path=letta_path, 
+            user_id=user_id, 
+            error=str(e),
+            error_type=type(e).__name__
+        )
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/health")
