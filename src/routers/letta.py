@@ -232,22 +232,35 @@ async def letta_proxy(
                         # Stream response chunks immediately
                         chunk_count = 0
                         
-                        # Use smaller chunk size for token streaming to avoid buffering
-                        chunk_size = 64 if stream_tokens else 1024
-                        
-                        async for chunk in response.aiter_bytes(chunk_size=chunk_size):
-                            if chunk:
-                                chunk_count += 1
-                                logger.debug(
-                                    "Streaming chunk",
-                                    chunk_size=len(chunk),
-                                    chunk_count=chunk_count,
-                                    path=letta_path,
-                                    user_id=user_id,
-                                    stream_tokens=stream_tokens,
-                                    chunk_size_setting=chunk_size
-                                )
-                                yield chunk
+                        if stream_tokens:
+                            # For token streaming, pass data as-is without chunking
+                            # Let Letta API handle the token boundaries
+                            async for chunk in response.aiter_bytes():
+                                if chunk:
+                                    chunk_count += 1
+                                    logger.debug(
+                                        "Token streaming chunk",
+                                        chunk_size=len(chunk),
+                                        chunk_count=chunk_count,
+                                        path=letta_path,
+                                        user_id=user_id,
+                                        stream_tokens=stream_tokens
+                                    )
+                                    yield chunk
+                        else:
+                            # For regular streaming, use chunking
+                            async for chunk in response.aiter_bytes(chunk_size=1024):
+                                if chunk:
+                                    chunk_count += 1
+                                    logger.debug(
+                                        "Regular streaming chunk",
+                                        chunk_size=len(chunk),
+                                        chunk_count=chunk_count,
+                                        path=letta_path,
+                                        user_id=user_id,
+                                        stream_tokens=stream_tokens
+                                    )
+                                    yield chunk
                         
                         logger.info(
                             "Streaming completed",
@@ -255,7 +268,7 @@ async def letta_proxy(
                             path=letta_path,
                             user_id=user_id,
                             stream_tokens=stream_tokens,
-                            chunk_size_used=chunk_size
+                            streaming_mode="token-level" if stream_tokens else "regular"
                         )
                                 
                 except Exception as e:
