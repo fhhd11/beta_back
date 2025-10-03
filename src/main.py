@@ -151,6 +151,41 @@ if settings.enable_rate_limiting:
 # Setup exception handlers
 setup_exception_handlers(app)
 
+# Early OPTIONS handler - must be FIRST middleware
+@app.middleware("http")
+async def early_options_handler(request: Request, call_next):
+    """Handle OPTIONS requests as early as possible."""
+    if request.method == "OPTIONS":
+        logger.info(
+            "Early OPTIONS handler called",
+            path=request.url.path,
+            origin=request.headers.get("origin", "no-origin"),
+            query=str(request.query_params)
+        )
+        
+        # Get the origin from the request
+        origin = request.headers.get("origin", "unknown")
+        
+        # Check if origin is allowed
+        allowed_origins = settings.allowed_origins
+        if "*" in allowed_origins or (origin and origin in allowed_origins):
+            allow_origin = origin if origin and origin in allowed_origins else "*"
+        else:
+            allow_origin = allowed_origins[0] if allowed_origins else "*"
+        
+        return Response(
+            status_code=200,
+            headers={
+                "Access-Control-Allow-Origin": allow_origin,
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+                "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Request-ID, X-User-ID, X-Idempotency-Key, User-Agent, Accept, Origin, Referer, Accept-Language, Content-Language",
+                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Max-Age": "600"
+            }
+        )
+    
+    return await call_next(request)
+
 # Request logging middleware - logs ALL requests
 @app.middleware("http")
 async def request_logging_middleware(request: Request, call_next):
