@@ -151,6 +151,31 @@ if settings.enable_rate_limiting:
 # Setup exception handlers
 setup_exception_handlers(app)
 
+# Request logging middleware - logs ALL requests
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    """Log all incoming requests."""
+    logger.info(
+        "Incoming request",
+        method=request.method,
+        path=request.url.path,
+        full_url=str(request.url),
+        origin=request.headers.get("origin", "no-origin"),
+        user_agent=request.headers.get("user-agent", "no-ua")[:100],
+        content_type=request.headers.get("content-type", "no-ct")
+    )
+    
+    response = await call_next(request)
+    
+    logger.info(
+        "Request completed",
+        method=request.method,
+        path=request.url.path,
+        status_code=response.status_code
+    )
+    
+    return response
+
 # Add CORS debugging middleware
 @app.middleware("http")
 async def cors_debug_middleware(request: Request, call_next):
