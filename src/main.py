@@ -135,7 +135,9 @@ app.add_middleware(
         "Origin",
         "Referer",
         "Accept-Language",
-        "Content-Language"
+        "Content-Language",
+        "Cache-Control",
+        "X-Requested-With"
     ],
     expose_headers=["X-Request-ID", "X-Rate-Limit-Remaining", "X-Rate-Limit-Reset"],
     max_age=600  # Cache preflight response for 10 minutes
@@ -178,7 +180,7 @@ async def early_options_handler(request: Request, call_next):
             headers={
                 "Access-Control-Allow-Origin": allow_origin,
                 "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-                "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Request-ID, X-User-ID, X-Idempotency-Key, User-Agent, Accept, Origin, Referer, Accept-Language, Content-Language",
+                "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Request-ID, X-User-ID, X-Idempotency-Key, User-Agent, Accept, Origin, Referer, Accept-Language, Content-Language, Cache-Control, X-Requested-With",
                 "Access-Control-Allow-Credentials": "true",
                 "Access-Control-Max-Age": "600"
             }
@@ -240,7 +242,7 @@ async def cors_debug_middleware(request: Request, call_next):
             headers={
                 "Access-Control-Allow-Origin": allow_origin,
                 "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-                "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Request-ID, X-User-ID, X-Idempotency-Key, User-Agent, Accept, Origin, Referer, Accept-Language, Content-Language",
+                "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Request-ID, X-User-ID, X-Idempotency-Key, User-Agent, Accept, Origin, Referer, Accept-Language, Content-Language, Cache-Control, X-Requested-With",
                 "Access-Control-Allow-Credentials": "true",
                 "Access-Control-Max-Age": "600"
             }
@@ -355,7 +357,7 @@ async def me_options():
         headers={
             "Access-Control-Allow-Origin": "http://localhost:3000",
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-            "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Request-ID, X-User-ID, X-Idempotency-Key, User-Agent, Accept, Origin, Referer, Accept-Language, Content-Language",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Request-ID, X-User-ID, X-Idempotency-Key, User-Agent, Accept, Origin, Referer, Accept-Language, Content-Language, Cache-Control, X-Requested-With",
             "Access-Control-Allow-Credentials": "true",
             "Access-Control-Max-Age": "600"
         }
@@ -388,7 +390,7 @@ async def global_options_handler(request: Request, full_path: str):
         headers={
             "Access-Control-Allow-Origin": allow_origin,
             "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-            "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Request-ID, X-User-ID, X-Idempotency-Key, User-Agent, Accept, Origin, Referer, Accept-Language, Content-Language",
+            "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Request-ID, X-User-ID, X-Idempotency-Key, User-Agent, Accept, Origin, Referer, Accept-Language, Content-Language, Cache-Control, X-Requested-With",
             "Access-Control-Allow-Credentials": "true",
             "Access-Control-Max-Age": "600"
         }
