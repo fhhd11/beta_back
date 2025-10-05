@@ -251,6 +251,11 @@ async def letta_proxy(
             # Streaming mode
             async def stream_response():
                 logger.critical(f"🔵🔵🔵 LETTA STREAMING FUNCTION STARTED 🔵🔵🔵")
+                logger.critical(f"🔵🔵🔵 LETTA STREAMING REQUEST - METHOD: {request.method}, URL: {letta_path} 🔵🔵🔵")
+                logger.critical(f"🔵🔵🔵 LETTA STREAMING REQUEST HEADERS: {headers} 🔵🔵🔵")
+                logger.critical(f"🔵🔵🔵 LETTA STREAMING REQUEST JSON: {json_data} 🔵🔵🔵")
+                logger.critical(f"🔵🔵🔵 LETTA STREAMING REQUEST PARAMS: {dict(request.query_params)} 🔵🔵🔵")
+                
                 try:
                     async with letta_client.stream(
                         method=request.method,
@@ -260,6 +265,9 @@ async def letta_proxy(
                         params=dict(request.query_params)
                     ) as response:
                         # Check response status
+                        logger.critical(f"🔵🔵🔵 LETTA STREAMING RESPONSE RECEIVED - STATUS: {response.status_code} 🔵🔵🔵")
+                        logger.critical(f"🔵🔵🔵 LETTA STREAMING RESPONSE HEADERS: {dict(response.headers)} 🔵🔵🔵")
+                        
                         if response.status_code >= 400:
                             logger.error(
                                 "Letta streaming error",
@@ -294,21 +302,15 @@ async def letta_proxy(
                                     chunk_count += 1
                                     total_bytes += len(chunk)
                                     
-                                    # Log first chunk for debugging
-                                    if chunk_count == 1:
-                                        logger.info(
-                                            "First token streaming chunk",
-                                            chunk_size=len(chunk),
-                                            chunk_preview=chunk[:100].decode('utf-8', errors='ignore'),
-                                            path=letta_path,
-                                            user_id=user_id
-                                        )
-                                    
-                                    logger.debug(
-                                        "Token streaming chunk",
+                                    # Log EVERY chunk with full details
+                                    chunk_text = chunk.decode('utf-8', errors='ignore')
+                                    logger.critical(
+                                        f"🔵🔵🔵 TOKEN STREAMING CHUNK #{chunk_count} 🔵🔵🔵",
                                         chunk_size=len(chunk),
                                         chunk_count=chunk_count,
                                         total_bytes=total_bytes,
+                                        chunk_content=chunk_text,
+                                        chunk_hex=chunk.hex()[:50] + "..." if len(chunk) > 25 else chunk.hex(),
                                         path=letta_path,
                                         user_id=user_id,
                                         stream_tokens=stream_tokens
@@ -321,21 +323,15 @@ async def letta_proxy(
                                     chunk_count += 1
                                     total_bytes += len(chunk)
                                     
-                                    # Log first chunk for debugging
-                                    if chunk_count == 1:
-                                        logger.info(
-                                            "First regular streaming chunk",
-                                            chunk_size=len(chunk),
-                                            chunk_preview=chunk[:100].decode('utf-8', errors='ignore'),
-                                            path=letta_path,
-                                            user_id=user_id
-                                        )
-                                    
-                                    logger.debug(
-                                        "Regular streaming chunk",
+                                    # Log EVERY chunk with full details
+                                    chunk_text = chunk.decode('utf-8', errors='ignore')
+                                    logger.critical(
+                                        f"🔵🔵🔵 REGULAR STREAMING CHUNK #{chunk_count} 🔵🔵🔵",
                                         chunk_size=len(chunk),
                                         chunk_count=chunk_count,
                                         total_bytes=total_bytes,
+                                        chunk_content=chunk_text,
+                                        chunk_hex=chunk.hex()[:50] + "..." if len(chunk) > 25 else chunk.hex(),
                                         path=letta_path,
                                         user_id=user_id,
                                         stream_tokens=stream_tokens
@@ -346,6 +342,7 @@ async def letta_proxy(
                         
                         # Log warning if no data was streamed
                         if chunk_count == 0:
+                            logger.critical(f"🔵🔵🔵 LETTA STREAMING COMPLETED WITH NO DATA 🔵🔵🔵")
                             logger.warning(
                                 "Streaming completed with no data",
                                 path=letta_path,
@@ -356,6 +353,7 @@ async def letta_proxy(
                                 content_type=response.headers.get("content-type")
                             )
                         else:
+                            logger.critical(f"🔵🔵🔵 LETTA STREAMING COMPLETED - CHUNKS: {chunk_count}, BYTES: {total_bytes} 🔵🔵🔵")
                             logger.info(
                                 "Streaming completed",
                                 total_chunks=chunk_count,
