@@ -297,20 +297,31 @@ async def letta_proxy(
                         if stream_tokens:
                             # For token streaming, pass data as-is without chunking
                             # Let Letta API handle the token boundaries
+                            print(f"🔵🔵🔵 STARTING TOKEN STREAMING ITERATION 🔵🔵🔵")
+                            logger.critical(f"🔵🔵🔵 STARTING TOKEN STREAMING ITERATION 🔵🔵🔵")
                             async for chunk in response.aiter_bytes():
+                                print(f"🔵🔵🔵 RECEIVED CHUNK - SIZE: {len(chunk) if chunk else 0} BYTES 🔵🔵🔵")
                                 if chunk:
                                     chunk_count += 1
                                     total_bytes += len(chunk)
                                     
                                     # Log EVERY chunk with full details
                                     chunk_text = chunk.decode('utf-8', errors='ignore')
+                                    
+                                    # Force print to stdout for immediate visibility
+                                    print(f"🔵🔵🔵 TOKEN STREAMING CHUNK #{chunk_count} - SIZE: {len(chunk)} BYTES 🔵🔵🔵")
+                                    print(f"🔵🔵🔵 CHUNK CONTENT: '{chunk_text}' 🔵🔵🔵")
+                                    print(f"🔵🔵🔵 CHUNK HEX: {chunk.hex()} 🔵🔵🔵")
+                                    print(f"🔵🔵🔵 CHUNK RAW: {chunk} 🔵🔵🔵")
+                                    
                                     logger.critical(
                                         f"🔵🔵🔵 TOKEN STREAMING CHUNK #{chunk_count} 🔵🔵🔵",
                                         chunk_size=len(chunk),
                                         chunk_count=chunk_count,
                                         total_bytes=total_bytes,
                                         chunk_content=chunk_text,
-                                        chunk_hex=chunk.hex()[:50] + "..." if len(chunk) > 25 else chunk.hex(),
+                                        chunk_hex=chunk.hex(),
+                                        chunk_raw_bytes=list(chunk),
                                         path=letta_path,
                                         user_id=user_id,
                                         stream_tokens=stream_tokens
@@ -318,20 +329,31 @@ async def letta_proxy(
                                     yield chunk
                         else:
                             # For regular streaming, use smaller chunk size for better responsiveness
+                            print(f"🔵🔵🔵 STARTING REGULAR STREAMING ITERATION 🔵🔵🔵")
+                            logger.critical(f"🔵🔵🔵 STARTING REGULAR STREAMING ITERATION 🔵🔵🔵")
                             async for chunk in response.aiter_bytes(chunk_size=512):
+                                print(f"🔵🔵🔵 RECEIVED CHUNK - SIZE: {len(chunk) if chunk else 0} BYTES 🔵🔵🔵")
                                 if chunk:
                                     chunk_count += 1
                                     total_bytes += len(chunk)
                                     
                                     # Log EVERY chunk with full details
                                     chunk_text = chunk.decode('utf-8', errors='ignore')
+                                    
+                                    # Force print to stdout for immediate visibility
+                                    print(f"🔵🔵🔵 REGULAR STREAMING CHUNK #{chunk_count} - SIZE: {len(chunk)} BYTES 🔵🔵🔵")
+                                    print(f"🔵🔵🔵 CHUNK CONTENT: '{chunk_text}' 🔵🔵🔵")
+                                    print(f"🔵🔵🔵 CHUNK HEX: {chunk.hex()} 🔵🔵🔵")
+                                    print(f"🔵🔵🔵 CHUNK RAW: {chunk} 🔵🔵🔵")
+                                    
                                     logger.critical(
                                         f"🔵🔵🔵 REGULAR STREAMING CHUNK #{chunk_count} 🔵🔵🔵",
                                         chunk_size=len(chunk),
                                         chunk_count=chunk_count,
                                         total_bytes=total_bytes,
                                         chunk_content=chunk_text,
-                                        chunk_hex=chunk.hex()[:50] + "..." if len(chunk) > 25 else chunk.hex(),
+                                        chunk_hex=chunk.hex(),
+                                        chunk_raw_bytes=list(chunk),
                                         path=letta_path,
                                         user_id=user_id,
                                         stream_tokens=stream_tokens
