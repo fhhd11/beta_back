@@ -250,6 +250,7 @@ async def letta_proxy(
             )
             # Streaming mode
             async def stream_response():
+                logger.critical(f"🔵🔵🔵 LETTA STREAMING FUNCTION STARTED 🔵🔵🔵")
                 try:
                     async with letta_client.stream(
                         method=request.method,
@@ -403,11 +404,18 @@ async def letta_proxy(
                 "X-Accel-Buffering": "no",  # Disable nginx buffering
                 "X-Content-Type-Options": "nosniff",
                 "Transfer-Encoding": "chunked",
+                # Add CORS headers for streaming
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept, Origin, X-Requested-With",
+                "Access-Control-Allow-Credentials": "true",
             }
             
             # Add token streaming specific headers
             if stream_tokens:
                 response_headers["X-Stream-Tokens"] = "true"
+            
+            logger.critical(f"🔵🔵🔵 LETTA STREAMING RESPONSE CREATED - HEADERS: {response_headers} 🔵🔵🔵")
             
             return StreamingResponse(
                 stream_response(),
