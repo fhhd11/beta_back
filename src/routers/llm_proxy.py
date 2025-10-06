@@ -31,17 +31,24 @@ class LLMProxyClient:
         self.base_url = str(self.settings.litellm_base_url).rstrip('/')
         self.timeout = self.settings.request_timeout
         
-        # Configure HTTP client with streaming optimizations
+        # Configure HTTP client with optimized connection pooling
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
-            timeout=httpx.Timeout(self.timeout),
+            timeout=httpx.Timeout(
+                connect=5.0,      # Connection timeout
+                read=self.timeout, # Read timeout
+                write=10.0,       # Write timeout
+                pool=30.0         # Pool timeout
+            ),
             headers={
                 "User-Agent": f"AI-Agent-Gateway/{self.settings.version}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "Connection": "keep-alive"
             },
             limits=httpx.Limits(
-                max_keepalive_connections=20,
-                max_connections=100
+                max_keepalive_connections=50,  # Increased for better pooling
+                max_connections=200,           # Increased connection limit
+                keepalive_expiry=30.0          # Keep connections alive longer
             ),
             # CRITICAL: Disable automatic decompression and buffering
             follow_redirects=True,
@@ -220,15 +227,11 @@ async def agent_llm_proxy(
     Note: This endpoint uses Agent Secret Key authentication, not JWT.
     We pass requests directly to the LLM service and return responses as-is.
     """
-    logger.critical(f"🚀🚀🚀 LLM PROXY ENDPOINT HIT - PATH: {request.url.path} 🚀🚀🚀")
-    logger.critical(f"🚀🚀🚀 LLM PROXY ENDPOINT HIT - FULL URL: {request.url} 🚀🚀🚀")
-    logger.critical(f"🚀🚀🚀 LLM PROXY ENDPOINT HIT - METHOD: {request.method} 🚀🚀🚀")
     logger.info(
-        "=== LLM PROXY ENDPOINT HIT ===",
+        "LLM proxy request started",
         user_id=user_id,
         request_path=str(request.url.path),
         request_method=request.method,
-        full_url=str(request.url),
         api_key_prefix=api_key[:8] + "..." if api_key else "None"
     )
     
@@ -283,34 +286,47 @@ async def agent_llm_proxy(
             content={"error": "Failed to initialize LLM client", "detail": str(e)}
         )
     
-    # Get user's LiteLLM API key from AMS
+    # Get user's LiteLLM API key directly from Supabase (optimized with caching)
     try:
-        from src.services.ams_client import AMSClient
-        ams_client = AMSClient()
-        user_profile = await ams_client.get_user_profile(user_id)
+        from src.services.supabase_client import get_supabase_client
+        supabase_client = await get_supabase_client()
+        litellm_key = await supabase_client.get_user_litellm_key(user_id)
         
-        if not user_profile or not hasattr(user_profile, 'litellm_key') or not user_profile.litellm_key:
-            logger.error(
+        if not litellm_key:
+            logger.warning(
                 "User LiteLLM key not found",
-                user_id=user_id,
-                profile_exists=bool(user_profile),
-                has_litellm_key=bool(getattr(user_profile, 'litellm_key', None) if user_profile else False)
+                user_id=user_id
             )
             return JSONResponse(
                 status_code=400,
-                content={"error": "User LiteLLM key not found", "detail": "User profile does not have a LiteLLM API key configured"}
+                content={"error": "User LiteLLM key not found", "detail": "User does not have a LiteLLM API key configured"}
             )
         
-        litellm_key = user_profile.litellm_key
         logger.debug(
             "User LiteLLM key retrieved",
             user_id=user_id,
-            key_prefix=litellm_key[:8] + "..." if litellm_key else "None"
+            key_prefix=litellm_key[:8] + "..."
         )
+        
+        # Cache successful validation for faster subsequent requests
+        validation_cache_key = f"proxy_validation:{user_id}"
+        try:
+            from src.utils.cache import cache_manager
+            await cache_manager.set(validation_cache_key, {
+                "user_id": user_id,
+                "litellm_key_prefix": litellm_key[:8] + "...",
+                "validated_at": time.time()
+            }, ttl=300)  # 5 minutes cache for validation
+        except Exception as cache_error:
+            logger.debug(
+                "Failed to cache proxy validation",
+                user_id=user_id,
+                error=str(cache_error)
+            )
         
     except Exception as e:
         logger.error(
-            "Failed to get user LiteLLM key",
+            "Failed to get user LiteLLM key from Supabase",
             user_id=user_id,
             error=str(e),
             error_type=type(e).__name__,
@@ -357,11 +373,10 @@ async def agent_llm_proxy(
         
         if is_streaming:
             # Handle streaming response with TRUE transparent proxying
-            logger.info(
-                "=== STREAMING REQUEST STARTED ===",
+            logger.debug(
+                "Streaming request started",
                 user_id=user_id,
-                model=model,
-                upstream_url=f"{llm_client.base_url}/chat/completions"
+                model=model
             )
             
             async def stream_generator():
@@ -385,13 +400,11 @@ async def agent_llm_proxy(
                         from src.utils.metrics import metrics
                         metrics.record_upstream_request("litellm", response.status_code, duration)
                         
-                        logger.info(
-                            "=== UPSTREAM CONNECTION ESTABLISHED ===",
+                        logger.debug(
+                            "Upstream connection established",
                             user_id=user_id,
                             model=model,
                             status_code=response.status_code,
-                            content_type=response.headers.get("content-type", "unknown"),
-                            transfer_encoding=response.headers.get("transfer-encoding", "unknown"),
                             duration_ms=round(duration * 1000, 2)
                         )
                         
@@ -411,8 +424,8 @@ async def agent_llm_proxy(
                             return
                         
                         # For successful responses, TRUE streaming without any buffering
-                        logger.info(
-                            "=== STARTING TRUE STREAM FORWARDING ===",
+                        logger.debug(
+                            "Starting stream forwarding",
                             user_id=user_id,
                             model=model
                         )
@@ -422,7 +435,7 @@ async def agent_llm_proxy(
                         last_log_time = time.time()
                         last_ping_time = time.time()
                         
-                        async for chunk in response.aiter_bytes(chunk_size=1024):
+                        async for chunk in response.aiter_bytes(chunk_size=512):
                             if chunk:
                                 chunk_count += 1
                                 total_bytes += len(chunk)
@@ -432,8 +445,8 @@ async def agent_llm_proxy(
                                 
                                 current_time = time.time()
                                 
-                                # Send keep-alive pings every 15 seconds
-                                if current_time - last_ping_time > 15:
+                                # Send keep-alive pings every 30 seconds
+                                if current_time - last_ping_time > 30:
                                     logger.debug(
                                         "Sending keep-alive ping",
                                         user_id=user_id,
@@ -454,8 +467,8 @@ async def agent_llm_proxy(
                                     )
                                     last_log_time = current_time
                         
-                        logger.info(
-                            "=== STREAMING COMPLETED ===",
+                        logger.debug(
+                            "Streaming completed",
                             user_id=user_id,
                             model=model,
                             total_chunks=chunk_count,

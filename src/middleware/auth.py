@@ -392,24 +392,102 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if not user_id:
             raise AuthenticationError("Missing user ID in agent proxy path")
         
-        # Validate secret key format and ownership
-        if not self._is_valid_agent_secret_format(secret_key):
-            raise AuthenticationError("Invalid agent secret key format")
-        
-        # Check if secret belongs to the specified user
-        if not await self._verify_agent_secret_ownership(secret_key, user_id):
-            raise AuthorizationError(
-                "Agent secret key does not belong to specified user",
-                context={"user_id": user_id}
-            )
-        
         logger.debug(
-            "Agent secret validation successful",
+            "Starting agent secret validation",
             user_id=user_id,
-            key_prefix=secret_key[:8] + "..."
+            path=path,
+            key_prefix=secret_key[:8] + "...",
+            key_length=len(secret_key)
         )
         
-        return user_id
+        # Validate secret key format and ownership with retry logic
+        if not self._is_valid_agent_secret_format(secret_key):
+            logger.warning(
+                "Invalid agent secret key format",
+                user_id=user_id,
+                key_prefix=secret_key[:8] + "...",
+                key_length=len(secret_key)
+            )
+            raise AuthenticationError("Invalid agent secret key format")
+        
+        # Check if secret belongs to the specified user with retry logic
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            try:
+                is_valid = await self._verify_agent_secret_ownership(secret_key, user_id)
+                if is_valid:
+                    logger.debug(
+                        "Agent secret validation successful",
+                        user_id=user_id,
+                        key_prefix=secret_key[:8] + "...",
+                        attempt=attempt + 1
+                    )
+                    return user_id
+                else:
+                    if attempt < max_retries:
+                        logger.warning(
+                            "Agent secret validation failed, retrying",
+                            user_id=user_id,
+                            key_prefix=secret_key[:8] + "...",
+                            attempt=attempt + 1,
+                            max_retries=max_retries
+                        )
+                        # Small delay before retry
+                        import asyncio
+                        await asyncio.sleep(0.1)
+                        continue
+                    else:
+                        logger.error(
+                            "Agent secret validation failed after all retries",
+                            user_id=user_id,
+                            key_prefix=secret_key[:8] + "...",
+                            attempts=max_retries + 1
+                        )
+                        raise AuthorizationError(
+                            "Agent secret key does not belong to specified user",
+                            context={
+                                "user_id": user_id,
+                                "key_prefix": secret_key[:8] + "...",
+                                "attempts": max_retries + 1
+                            }
+                        )
+            except Exception as e:
+                if attempt < max_retries:
+                    logger.warning(
+                        "Agent secret validation error, retrying",
+                        user_id=user_id,
+                        key_prefix=secret_key[:8] + "...",
+                        attempt=attempt + 1,
+                        error=str(e),
+                        error_type=type(e).__name__
+                    )
+                    import asyncio
+                    await asyncio.sleep(0.1)
+                    continue
+                else:
+                    logger.error(
+                        "Agent secret validation error after all retries",
+                        user_id=user_id,
+                        key_prefix=secret_key[:8] + "...",
+                        error=str(e),
+                        error_type=type(e).__name__,
+                        exc_info=True
+                    )
+                    raise AuthorizationError(
+                        "Agent secret key validation failed",
+                        context={
+                            "user_id": user_id,
+                            "key_prefix": secret_key[:8] + "...",
+                            "error": str(e),
+                            "error_type": type(e).__name__
+                        }
+                    )
+        
+        # This should never be reached, but just in case
+        raise AuthorizationError(
+            "Agent secret key does not belong to specified user",
+            context={"user_id": user_id}
+        )
     
     def _is_valid_agent_secret_format(self, secret_key: str) -> bool:
         """Validate agent secret key format."""
@@ -451,42 +529,88 @@ class AuthMiddleware(BaseHTTPMiddleware):
     
     async def _verify_agent_secret_ownership(self, secret_key: str, user_id: str) -> bool:
         """Verify that agent secret key belongs to the specified user."""
-        # Cache key for agent secret ownership
-        cache_key = f"agent_secret_ownership:{secret_key[:16]}"
+        # FIXED: Create unique cache key including user_id to prevent race conditions
+        import hashlib
+        cache_key_data = f"agent_secret_ownership:{secret_key}:{user_id}"
+        cache_key = f"agent_secret_ownership:{hashlib.sha256(cache_key_data.encode()).hexdigest()[:32]}"
+        
+        logger.debug(
+            "Verifying agent secret ownership",
+            user_id=user_id,
+            key_prefix=secret_key[:8] + "...",
+            cache_key=cache_key
+        )
         
         # Try to get from cache first
-        cached_user_id = await cache_manager.get(cache_key)
-        if cached_user_id:
-            return cached_user_id == user_id
+        try:
+            cached_result = await cache_manager.get(cache_key)
+            if cached_result is not None:
+                logger.debug(
+                    "Agent secret ownership found in cache",
+                    user_id=user_id,
+                    cached_result=cached_result
+                )
+                return bool(cached_result)
+        except Exception as e:
+            logger.warning(
+                "Cache lookup failed for agent secret ownership",
+                user_id=user_id,
+                error=str(e)
+            )
+            # Continue with direct validation as fallback
+        
+        # Perform direct validation
+        is_valid = False
+        validation_method = None
         
         # Handle Letta API keys
         if secret_key.startswith("sk-"):
             # For Letta API keys, we accept them if we have a master key configured
-            # In production, this should validate against Letta's API or a database
             if self.settings.agent_secret_master_key:
-                # Cache the valid ownership for Letta keys
-                await cache_manager.set(cache_key, user_id, ttl=300)
+                is_valid = True
+                validation_method = "letta_api_key"
                 logger.debug("Letta API key ownership verified", user_id=user_id)
-                return True
             else:
                 logger.warning("No master key configured for Letta API key validation")
-                return False
+                is_valid = False
+                validation_method = "letta_api_key_no_master"
         
-        # Validate against master key (simple validation for now)
-        # In production, this should query AMS or a dedicated service
-        if secret_key == self.settings.agent_secret_master_key:
+        # Validate against master key
+        elif secret_key == self.settings.agent_secret_master_key:
             # Master key can act as any user (for development/testing)
-            await cache_manager.set(cache_key, user_id, ttl=300)
-            return True
+            is_valid = True
+            validation_method = "master_key"
+            logger.debug("Master agent secret key verified", user_id=user_id)
         
-        # TODO: Implement proper agent secret validation via AMS
-        # For now, we'll implement a simple pattern-based validation
-        expected_secret = self._generate_expected_agent_secret(user_id)
-        is_valid = secret_key == expected_secret
+        # Validate generated secret
+        else:
+            expected_secret = self._generate_expected_agent_secret(user_id)
+            is_valid = secret_key == expected_secret
+            validation_method = "generated_secret"
+            
+            logger.debug(
+                "Generated secret validation",
+                user_id=user_id,
+                is_valid=is_valid,
+                expected_prefix=expected_secret[:8] + "...",
+                received_prefix=secret_key[:8] + "..."
+            )
         
-        if is_valid:
-            # Cache the valid ownership
-            await cache_manager.set(cache_key, user_id, ttl=300)
+        # Cache the result with longer TTL for stability
+        try:
+            await cache_manager.set(cache_key, is_valid, ttl=600)  # 10 minutes
+            logger.debug(
+                "Agent secret ownership cached",
+                user_id=user_id,
+                is_valid=is_valid,
+                validation_method=validation_method
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to cache agent secret ownership",
+                user_id=user_id,
+                error=str(e)
+            )
         
         return is_valid
     

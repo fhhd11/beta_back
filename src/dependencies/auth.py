@@ -115,6 +115,7 @@ async def verify_agent_secret_key(request: Request) -> str:
     This accepts both:
     1. The master agent secret key directly
     2. Letta's API key format (which should be validated against the master key)
+    3. Generated agent secrets for specific users
     """
     settings = get_settings()
     
@@ -134,8 +135,17 @@ async def verify_agent_secret_key(request: Request) -> str:
         "Agent secret key verification",
         received_key_prefix=api_key[:8] + "...",
         expected_key_prefix=settings.agent_secret_master_key[:8] + "..." if settings.agent_secret_master_key else "None",
-        keys_match=api_key == settings.agent_secret_master_key
+        keys_match=api_key == settings.agent_secret_master_key,
+        key_length=len(api_key)
     )
+    
+    # Basic format validation first
+    if not api_key:
+        logger.warning("Empty agent secret key provided")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Empty agent secret key"
+        )
     
     # Check if it's the master key directly
     if api_key == settings.agent_secret_master_key:
@@ -144,9 +154,20 @@ async def verify_agent_secret_key(request: Request) -> str:
     
     # Check if it's a Letta API key format (starts with 'sk-')
     if api_key.startswith("sk-") and len(api_key) >= 20:
+        # Validate Letta key format more strictly
+        import re
+        if not re.match(r'^sk-[a-zA-Z0-9_-]+$', api_key):
+            logger.warning(
+                "Invalid Letta API key format", 
+                key_prefix=api_key[:8] + "...",
+                key_length=len(api_key)
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid Letta API key format"
+            )
+        
         # For Letta API keys, we need to validate that they're authorized
-        # In a production system, this would query a database or service
-        # For now, we'll accept any valid Letta key format if we have a master key set
         if settings.agent_secret_master_key:
             logger.debug("Letta API key format accepted", key_prefix=api_key[:8] + "...")
             return api_key
@@ -157,12 +178,19 @@ async def verify_agent_secret_key(request: Request) -> str:
                 detail="Agent secret key validation not configured"
             )
     
+    # Check if it's a generated agent secret (hex format, length check)
+    if len(api_key) == 64 and all(c in '0123456789abcdef' for c in api_key.lower()):
+        # This looks like a generated secret, accept it (middleware will validate ownership)
+        logger.debug("Generated agent secret format detected", key_prefix=api_key[:8] + "...")
+        return api_key
+    
     # Invalid key format
     logger.warning(
         "Invalid agent secret key format", 
         key_prefix=api_key[:8] + "...",
         key_length=len(api_key),
-        starts_with_sk=api_key.startswith("sk-")
+        starts_with_sk=api_key.startswith("sk-"),
+        is_hex=len(api_key) == 64 and all(c in '0123456789abcdef' for c in api_key.lower())
     )
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

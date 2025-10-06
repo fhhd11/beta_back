@@ -111,30 +111,49 @@ class CacheManager:
         return f"{prefix}:{key_hash}"
     
     async def get(self, key: str, default: Any = None) -> Any:
-        """Get value from cache."""
+        """Get value from cache with improved error handling."""
         try:
             redis = await self._get_redis()
-            cached_data = await redis.get(key)
+            
+            # Add timeout for cache operations to prevent hanging
+            import asyncio
+            cached_data = await asyncio.wait_for(redis.get(key), timeout=2.0)
             
             if cached_data is not None:
                 # Record cache hit
                 self.hit_counts[key] = self.hit_counts.get(key, 0) + 1
                 metrics.record_cache_operation("get", "redis", True)
                 
-                # Parse cached data
-                if isinstance(cached_data, str) and cached_data.startswith('{"value":'):
-                    data = json.loads(cached_data)
-                    return self._deserialize_value(data["value"])
-                else:
-                    return self._deserialize_value(cached_data)
+                # Parse cached data with better error handling
+                try:
+                    if isinstance(cached_data, str) and cached_data.startswith('{"value":'):
+                        data = json.loads(cached_data)
+                        return self._deserialize_value(data["value"])
+                    else:
+                        return self._deserialize_value(cached_data)
+                except (json.JSONDecodeError, TypeError, ValueError) as parse_error:
+                    logger.warning(
+                        "Cache data parsing failed, treating as miss",
+                        key=key,
+                        error=str(parse_error),
+                        data_preview=cached_data[:100] if cached_data else None
+                    )
+                    # Treat parsing error as cache miss
+                    self.miss_counts[key] = self.miss_counts.get(key, 0) + 1
+                    metrics.record_cache_operation("get", "redis", False)
+                    return default
             
             # Record cache miss
             self.miss_counts[key] = self.miss_counts.get(key, 0) + 1
             metrics.record_cache_operation("get", "redis", False)
             return default
             
+        except asyncio.TimeoutError:
+            logger.warning("Cache get timeout", key=key, timeout=2.0)
+            metrics.record_cache_operation("get", "redis", False)
+            return default
         except Exception as e:
-            logger.warning("Cache get failed", key=key, error=str(e))
+            logger.warning("Cache get failed", key=key, error=str(e), error_type=type(e).__name__)
             metrics.record_cache_operation("get", "redis", False)
             return default
     
