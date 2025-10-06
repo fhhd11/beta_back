@@ -155,40 +155,39 @@ def filter_empty_messages(logger: Any, method_name: str, event_dict: Dict[str, A
         if "comma-separated parsed:" in event:
             return None
     
-    # Check if all values are empty or whitespace
-    non_empty_values = []
+    # Only filter if ALL values are empty - be less aggressive
+    has_meaningful_content = False
     for key, value in event_dict.items():
         if value is not None and str(value).strip():
-            non_empty_values.append(value)
+            has_meaningful_content = True
+            break
     
-    if not non_empty_values:
+    if not has_meaningful_content:
         return None
     
-    # Filter out empty values from the dict
-    filtered_dict = {}
-    for key, value in event_dict.items():
-        if value is not None and str(value).strip():
-            filtered_dict[key] = value
-    
-    return filtered_dict if filtered_dict else None
+    return event_dict
 
 
 def _suppress_noisy_loggers(log_level: str) -> None:
     """Suppress noisy third-party loggers based on log level."""
-    # Always suppress these noisy loggers completely
+    # Suppress these noisy loggers but keep some level of logging
     noisy_loggers = [
         "httpx", "httpcore", "uvicorn.access", "uvicorn.error",
-        "asyncio", "multipart", "urllib3", "requests", "uvicorn",
-        "fastapi", "starlette", "pydantic", "anyio", "h11"
+        "asyncio", "multipart", "urllib3", "requests", "anyio", "h11"
     ]
     
     for logger_name in noisy_loggers:
-        logging.getLogger(logger_name).setLevel(logging.CRITICAL)
-        # Also disable propagation to prevent parent loggers from showing these
-        logging.getLogger(logger_name).propagate = False
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
     
-    # Set root logger to WARNING to catch any remaining noise
-    logging.getLogger().setLevel(logging.WARNING)
+    # More aggressive suppression for production
+    if log_level in ["WARNING", "ERROR", "CRITICAL"]:
+        production_loggers = [
+            "fastapi", "starlette", "pydantic", "uvicorn"
+        ]
+        for logger_name in production_loggers:
+            logging.getLogger(logger_name).setLevel(logging.ERROR)
+    
+    # Don't change root logger level - let our application logs through
 
 
 class PerformanceLogger:

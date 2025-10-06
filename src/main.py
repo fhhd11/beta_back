@@ -158,22 +158,37 @@ async def request_logging_middleware(request: Request, call_next):
     import time
     import uuid
     
-    # Skip logging for streaming requests to avoid buffering
-    if (request.url.path.endswith("/proxy") or 
-        request.url.path.endswith("/chat/completions") or
-        "stream" in request.url.path or
-        request.headers.get("accept") == "text/event-stream"):
-        return await call_next(request)
-    
     # Generate request ID
     request_id = str(uuid.uuid4())
     request.state.request_id = request_id
     
+    # Skip detailed logging for streaming requests to avoid buffering
+    # but still log that the request was received
+    is_streaming = (request.url.path.endswith("/proxy") or 
+                   request.url.path.endswith("/chat/completions") or
+                   "stream" in request.url.path or
+                   request.headers.get("accept") == "text/event-stream")
+    
+    if is_streaming:
+        logger.info(
+            "Streaming request received",
+            request_id=request_id,
+            method=request.method,
+            path=request.url.path
+        )
+        return await call_next(request)
+    
     # Start timing
     start_time = time.time()
     
-    # Log request (only for non-OPTIONS requests to reduce noise)
-    if request.method != "OPTIONS":
+    # Log request
+    if request.method == "OPTIONS":
+        logger.debug(
+            "OPTIONS request",
+            request_id=request_id,
+            path=request.url.path
+        )
+    else:
         logger.info(
             "Request started",
             request_id=request_id,
@@ -206,10 +221,23 @@ async def request_logging_middleware(request: Request, call_next):
         # Add request ID to response headers
         response.headers["X-Request-ID"] = request_id
         
-        # Log response (only for non-OPTIONS and non-2xx responses)
-        if request.method != "OPTIONS" and response.status_code >= 400:
+        # Log response
+        if request.method == "OPTIONS":
+            logger.debug(
+                "OPTIONS request completed",
+                request_id=request_id,
+                status_code=response.status_code
+            )
+        elif response.status_code >= 400:
             logger.warning(
                 "Request completed with error",
+                request_id=request_id,
+                status_code=response.status_code,
+                duration_ms=round(duration * 1000, 2)
+            )
+        else:
+            logger.info(
+                "Request completed successfully",
                 request_id=request_id,
                 status_code=response.status_code,
                 duration_ms=round(duration * 1000, 2)
