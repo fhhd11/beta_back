@@ -131,10 +131,6 @@ async def letta_proxy(
     path: str,
     user_id: str = Depends(get_current_user_id)
 ):
-    logger.critical("🔵🔵🔵 LETTA PROXY CALLED - NEW VERSION 2025-10-05 17:35 🔵🔵🔵")
-    logger.critical(f"🔵🔵🔵 LETTA PROXY CALLED - PATH: {path} 🔵🔵🔵")
-    logger.critical(f"🔵🔵🔵 LETTA PROXY CALLED - FULL URL: {request.url} 🔵🔵🔵")
-    logger.critical(f"🔵🔵🔵 LETTA PROXY CALLED - METHOD: {request.method} 🔵🔵🔵")
     """
     Simple Letta proxy that forwards requests directly to Letta API.
     
@@ -145,7 +141,6 @@ async def letta_proxy(
     - Streaming support for streaming endpoints
     - Direct pass-through of requests/responses
     """
-    print("🔵🔵🔵 LETTA PROXY CALLED 🔵🔵🔵")
     logger.info(
         "Letta proxy called",
         method=request.method,
@@ -250,11 +245,12 @@ async def letta_proxy(
             )
             # Streaming mode
             async def stream_response():
-                logger.critical(f"🔵🔵🔵 LETTA STREAMING FUNCTION STARTED 🔵🔵🔵")
-                logger.critical(f"🔵🔵🔵 LETTA STREAMING REQUEST - METHOD: {request.method}, URL: {letta_path} 🔵🔵🔵")
-                logger.critical(f"🔵🔵🔵 LETTA STREAMING REQUEST HEADERS: {headers} 🔵🔵🔵")
-                logger.critical(f"🔵🔵🔵 LETTA STREAMING REQUEST JSON: {json_data} 🔵🔵🔵")
-                logger.critical(f"🔵🔵🔵 LETTA STREAMING REQUEST PARAMS: {dict(request.query_params)} 🔵🔵🔵")
+                logger.info(
+                    "Starting Letta streaming request",
+                    method=request.method,
+                    url=letta_path,
+                    user_id=user_id
+                )
                 
                 try:
                     async with letta_client.stream(
@@ -265,8 +261,11 @@ async def letta_proxy(
                         params=dict(request.query_params)
                     ) as response:
                         # Check response status
-                        logger.critical(f"🔵🔵🔵 LETTA STREAMING RESPONSE RECEIVED - STATUS: {response.status_code} 🔵🔵🔵")
-                        logger.critical(f"🔵🔵🔵 LETTA STREAMING RESPONSE HEADERS: {dict(response.headers)} 🔵🔵🔵")
+                        logger.info(
+                            "Letta streaming response received",
+                            status_code=response.status_code,
+                            user_id=user_id
+                        )
                         
                         if response.status_code >= 400:
                             logger.error(
@@ -297,66 +296,30 @@ async def letta_proxy(
                         if stream_tokens:
                             # For token streaming, pass data as-is without chunking
                             # Let Letta API handle the token boundaries
-                            print(f"🔵🔵🔵 STARTING TOKEN STREAMING ITERATION 🔵🔵🔵")
-                            logger.critical(f"🔵🔵🔵 STARTING TOKEN STREAMING ITERATION 🔵🔵🔵")
+                            logger.debug("Starting token streaming iteration")
                             async for chunk in response.aiter_bytes():
-                                print(f"🔵🔵🔵 RECEIVED CHUNK - SIZE: {len(chunk) if chunk else 0} BYTES 🔵🔵🔵")
                                 if chunk:
                                     chunk_count += 1
                                     total_bytes += len(chunk)
                                     
-                                    # Log EVERY chunk with full details
-                                    chunk_text = chunk.decode('utf-8', errors='ignore')
-                                    
-                                    # Force print to stdout for immediate visibility
-                                    print(f"🔵🔵🔵 TOKEN STREAMING CHUNK #{chunk_count} - SIZE: {len(chunk)} BYTES 🔵🔵🔵")
-                                    print(f"🔵🔵🔵 CHUNK CONTENT: '{chunk_text}' 🔵🔵🔵")
-                                    print(f"🔵🔵🔵 CHUNK HEX: {chunk.hex()} 🔵🔵🔵")
-                                    print(f"🔵🔵🔵 CHUNK RAW: {chunk} 🔵🔵🔵")
-                                    
-                                    logger.critical(
-                                        f"🔵🔵🔵 TOKEN STREAMING CHUNK #{chunk_count} 🔵🔵🔵",
+                                    logger.debug(
+                                        "Token streaming chunk",
                                         chunk_size=len(chunk),
-                                        chunk_count=chunk_count,
-                                        total_bytes=total_bytes,
-                                        chunk_content=chunk_text,
-                                        chunk_hex=chunk.hex(),
-                                        chunk_raw_bytes=list(chunk),
-                                        path=letta_path,
-                                        user_id=user_id,
-                                        stream_tokens=stream_tokens
+                                        chunk_count=chunk_count
                                     )
                                     yield chunk
                         else:
                             # For regular streaming, use smaller chunk size for better responsiveness
-                            print(f"🔵🔵🔵 STARTING REGULAR STREAMING ITERATION 🔵🔵🔵")
-                            logger.critical(f"🔵🔵🔵 STARTING REGULAR STREAMING ITERATION 🔵🔵🔵")
+                            logger.debug("Starting regular streaming iteration")
                             async for chunk in response.aiter_bytes(chunk_size=512):
-                                print(f"🔵🔵🔵 RECEIVED CHUNK - SIZE: {len(chunk) if chunk else 0} BYTES 🔵🔵🔵")
                                 if chunk:
                                     chunk_count += 1
                                     total_bytes += len(chunk)
                                     
-                                    # Log EVERY chunk with full details
-                                    chunk_text = chunk.decode('utf-8', errors='ignore')
-                                    
-                                    # Force print to stdout for immediate visibility
-                                    print(f"🔵🔵🔵 REGULAR STREAMING CHUNK #{chunk_count} - SIZE: {len(chunk)} BYTES 🔵🔵🔵")
-                                    print(f"🔵🔵🔵 CHUNK CONTENT: '{chunk_text}' 🔵🔵🔵")
-                                    print(f"🔵🔵🔵 CHUNK HEX: {chunk.hex()} 🔵🔵🔵")
-                                    print(f"🔵🔵🔵 CHUNK RAW: {chunk} 🔵🔵🔵")
-                                    
-                                    logger.critical(
-                                        f"🔵🔵🔵 REGULAR STREAMING CHUNK #{chunk_count} 🔵🔵🔵",
+                                    logger.debug(
+                                        "Regular streaming chunk",
                                         chunk_size=len(chunk),
-                                        chunk_count=chunk_count,
-                                        total_bytes=total_bytes,
-                                        chunk_content=chunk_text,
-                                        chunk_hex=chunk.hex(),
-                                        chunk_raw_bytes=list(chunk),
-                                        path=letta_path,
-                                        user_id=user_id,
-                                        stream_tokens=stream_tokens
+                                        chunk_count=chunk_count
                                     )
                                     yield chunk
                         
@@ -364,7 +327,6 @@ async def letta_proxy(
                         
                         # Log warning if no data was streamed
                         if chunk_count == 0:
-                            logger.critical(f"🔵🔵🔵 LETTA STREAMING COMPLETED WITH NO DATA 🔵🔵🔵")
                             logger.warning(
                                 "Streaming completed with no data",
                                 path=letta_path,
@@ -375,7 +337,6 @@ async def letta_proxy(
                                 content_type=response.headers.get("content-type")
                             )
                         else:
-                            logger.critical(f"🔵🔵🔵 LETTA STREAMING COMPLETED - CHUNKS: {chunk_count}, BYTES: {total_bytes} 🔵🔵🔵")
                             logger.info(
                                 "Streaming completed",
                                 total_chunks=chunk_count,
@@ -435,7 +396,7 @@ async def letta_proxy(
             if stream_tokens:
                 response_headers["X-Stream-Tokens"] = "true"
             
-            logger.critical(f"🔵🔵🔵 LETTA STREAMING RESPONSE CREATED - HEADERS: {response_headers} 🔵🔵🔵")
+            logger.debug("Letta streaming response created", headers=response_headers)
             
             return StreamingResponse(
                 stream_response(),

@@ -33,7 +33,7 @@ def setup_logging(log_level: str = "INFO", log_format: str = "json") -> None:
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
         structlog.processors.TimeStamper(fmt="iso"),
-        # Add caller info for errors
+        # Add caller info for errors only
         structlog.processors.CallsiteParameterAdder(
             parameters=[structlog.processors.CallsiteParameter.FILENAME,
                        structlog.processors.CallsiteParameter.FUNC_NAME,
@@ -43,6 +43,8 @@ def setup_logging(log_level: str = "INFO", log_format: str = "json") -> None:
         structlog.processors.format_exc_info,
         # Filter sensitive data
         filter_sensitive_data,
+        # Filter out empty messages
+        filter_empty_messages,
     ]
     
     if log_format == "json":
@@ -61,15 +63,12 @@ def setup_logging(log_level: str = "INFO", log_format: str = "json") -> None:
         cache_logger_on_first_use=True,
     )
     
-    # Suppress noisy third-party loggers in production
-    if log_level in ["WARNING", "ERROR", "CRITICAL"]:
-        logging.getLogger("httpx").setLevel(logging.WARNING)
-        logging.getLogger("httpcore").setLevel(logging.WARNING)
-        logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    # Suppress noisy third-party loggers
+    _suppress_noisy_loggers(log_level)
 
 
 def add_correlation_id(logger: Any, method_name: str, event_dict: Dict[str, Any]) -> Dict[str, Any]:
-    """Add correlation ID from request context to log events."""
+    """Add correlation ID and context from request to log events."""
     import contextvars
     
     # Try to get request ID from context
@@ -88,6 +87,17 @@ def add_correlation_id(logger: Any, method_name: str, event_dict: Dict[str, Any]
         if user_id:
             event_dict["user_id"] = user_id
     except (ImportError, LookupError):
+        pass
+    
+    # Add service context
+    event_dict["service"] = "api-gateway"
+    
+    # Add environment context
+    try:
+        from src.config.settings import get_settings
+        settings = get_settings()
+        event_dict["environment"] = settings.environment
+    except:
         pass
     
     return event_dict
@@ -123,6 +133,35 @@ def filter_sensitive_data(logger: Any, method_name: str, event_dict: Dict[str, A
     
     # Filter the event dictionary
     return _filter_dict(event_dict)
+
+
+def filter_empty_messages(logger: Any, method_name: str, event_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Filter out empty or whitespace-only messages."""
+    message = event_dict.get("event", "")
+    if isinstance(message, str) and not message.strip():
+        # Return empty dict to skip this log entry
+        return {}
+    return event_dict
+
+
+def _suppress_noisy_loggers(log_level: str) -> None:
+    """Suppress noisy third-party loggers based on log level."""
+    # Always suppress these noisy loggers
+    noisy_loggers = [
+        "httpx", "httpcore", "uvicorn.access", "uvicorn.error",
+        "asyncio", "multipart", "urllib3", "requests"
+    ]
+    
+    for logger_name in noisy_loggers:
+        logging.getLogger(logger_name).setLevel(logging.WARNING)
+    
+    # In production, suppress even more
+    if log_level in ["WARNING", "ERROR", "CRITICAL"]:
+        production_loggers = [
+            "fastapi", "starlette", "pydantic"
+        ]
+        for logger_name in production_loggers:
+            logging.getLogger(logger_name).setLevel(logging.ERROR)
 
 
 class PerformanceLogger:
