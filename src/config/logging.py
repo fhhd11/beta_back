@@ -155,9 +155,10 @@ def filter_empty_messages(logger: Any, method_name: str, event_dict: Dict[str, A
     
     # Filter out noisy CORS parsing messages
     if isinstance(event, str):
-        if "CORS parsing:" in event or "raw origins_str=" in event:
-            return None
-        if "comma-separated parsed:" in event:
+        if ("CORS parsing:" in event or 
+            "raw origins_str=" in event or
+            "comma-separated parsed:" in event or
+            "CORS" in event and "parsing" in event):
             return None
     
     # Check if all values are empty or whitespace

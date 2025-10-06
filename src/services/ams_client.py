@@ -104,14 +104,19 @@ class AMSClient:
         
         try:
             # Use circuit breaker for AMS requests
-            response = await self.circuit_breaker.call(
-                self.client.request,
+            if not await self.circuit_breaker.can_execute():
+                raise UpstreamError("AMS service is currently unavailable (circuit breaker open)")
+            
+            response = await self.client.request(
                 method=method,
                 url=path,
                 headers=request_headers,
                 json=json_data,
                 params=params
             )
+            
+            # Record success
+            await self.circuit_breaker.record_success()
             
             duration = time.time() - start_time
             
@@ -129,6 +134,9 @@ class AMSClient:
             
             # Handle error status codes
             if response.status_code >= 400:
+                # Record failure for circuit breaker
+                await self.circuit_breaker.record_failure()
+                
                 error_detail = None
                 try:
                     error_detail = response.json()
@@ -151,6 +159,9 @@ class AMSClient:
             return response
             
         except httpx.TimeoutException:
+            # Record failure for circuit breaker
+            await self.circuit_breaker.record_failure()
+            
             duration = time.time() - start_time
             metrics.record_upstream_request("ams", 408, duration)
             
@@ -161,6 +172,9 @@ class AMSClient:
             )
         
         except httpx.RequestError as e:
+            # Record failure for circuit breaker
+            await self.circuit_breaker.record_failure()
+            
             duration = time.time() - start_time
             metrics.record_upstream_request("ams", 502, duration)
             
