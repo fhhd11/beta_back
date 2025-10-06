@@ -199,9 +199,15 @@ def _suppress_noisy_loggers(log_level: str) -> None:
             logging.getLogger(logger_name).propagate = False
     
     # Suppress CORS parsing logs specifically
-    cors_logger = logging.getLogger("fastapi.middleware.cors")
-    cors_logger.setLevel(logging.WARNING)
-    cors_logger.propagate = False
+    cors_loggers = [
+        "fastapi.middleware.cors",
+        "starlette.middleware.cors",
+        "uvicorn.middleware.cors"
+    ]
+    for cors_logger_name in cors_loggers:
+        cors_logger = logging.getLogger(cors_logger_name)
+        cors_logger.setLevel(logging.WARNING)
+        cors_logger.propagate = False
     
     # Don't change root logger level - let application control its own logging
 

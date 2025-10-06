@@ -13,7 +13,7 @@ from src.models.responses import UserProfile, AgentInstance, AgentSummary
 from src.utils.cache import cache_manager, cached_user_profile, cached_agent_ownership
 from src.utils.metrics import metrics
 from src.utils.exceptions import UpstreamError, RequestTimeoutError, NotFoundError
-from src.middleware.circuit_breaker import circuit_breaker, CircuitBreakerConfig
+from src.middleware.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
 
 logger = structlog.get_logger(__name__)
 
@@ -25,6 +25,11 @@ class AMSClient:
         self.settings = settings or get_settings()
         self.base_url = str(self.settings.ams_base_url).rstrip('/')
         self.timeout = self.settings.request_timeout
+        
+        # Create circuit breaker for AMS service
+        self.circuit_breaker = CircuitBreaker(
+            CircuitBreakerConfig(service_name="ams")
+        )
         
         # Configure HTTP client with Supabase service key
         try:
@@ -99,7 +104,7 @@ class AMSClient:
         
         try:
             # Use circuit breaker for AMS requests
-            response = await circuit_breaker.call(
+            response = await self.circuit_breaker.call(
                 self.client.request,
                 method=method,
                 url=path,
