@@ -112,9 +112,6 @@ app = FastAPI(
 
 # Add CORS middleware
 allowed_origins = settings.allowed_origins
-logger.info("CORS configuration", 
-           allowed_origins=allowed_origins, 
-           origins_count=len(allowed_origins))
 
 # Ensure we have valid origins
 if not allowed_origins or allowed_origins == ["*"]:
@@ -290,5 +287,7 @@ if __name__ == "__main__":
         port=8000,
         reload=True if settings.environment == "development" else False,
         log_config=None,  # Use our custom logging
-        access_log=False  # We handle access logging in middleware
+        access_log=False,  # We handle access logging in middleware
+        server_header=False,  # Disable server header
+        date_header=False  # Disable date header
     )
