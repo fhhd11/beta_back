@@ -5,7 +5,8 @@ pydantic[email]==2.5.0
 pydantic-settings==2.1.0
 
 # HTTP client for async requests
-httpx==0.25.2
+httpx[http2]==0.25.2
+h2==4.1.0
 
 # Authentication and JWT
 python-jose[cryptography]==3.3.0

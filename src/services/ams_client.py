@@ -27,27 +27,52 @@ class AMSClient:
         self.timeout = self.settings.request_timeout
         
         # Configure HTTP client with Supabase service key
-        self.client = httpx.AsyncClient(
-            base_url=self.base_url,
-            timeout=httpx.Timeout(
-                connect=5.0,      # Connection timeout
-                read=self.timeout,  # Read timeout
-                write=5.0,        # Write timeout
-                pool=10.0         # Pool timeout
-            ),
-            headers={
-                "User-Agent": f"AI-Agent-Gateway/{self.settings.version}",
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.settings.supabase_service_key}"
-            },
-            limits=httpx.Limits(
-                max_keepalive_connections=50,  # Increased for better pooling
-                max_connections=200,           # Increased total connections
-                keepalive_expiry=30.0          # Keep connections alive longer
-            ),
-            http2=True,  # Enable HTTP/2 for better performance
-            follow_redirects=True  # Handle redirects automatically
-        )
+        try:
+            # Try to enable HTTP/2 if h2 package is available
+            self.client = httpx.AsyncClient(
+                base_url=self.base_url,
+                timeout=httpx.Timeout(
+                    connect=5.0,      # Connection timeout
+                    read=self.timeout,  # Read timeout
+                    write=5.0,        # Write timeout
+                    pool=10.0         # Pool timeout
+                ),
+                headers={
+                    "User-Agent": f"AI-Agent-Gateway/{self.settings.version}",
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.settings.supabase_service_key}"
+                },
+                limits=httpx.Limits(
+                    max_keepalive_connections=50,  # Increased for better pooling
+                    max_connections=200,           # Increased total connections
+                    keepalive_expiry=30.0          # Keep connections alive longer
+                ),
+                http2=True,  # Enable HTTP/2 for better performance
+                follow_redirects=True  # Handle redirects automatically
+            )
+        except ImportError:
+            # Fallback to HTTP/1.1 if h2 package is not available
+            self.client = httpx.AsyncClient(
+                base_url=self.base_url,
+                timeout=httpx.Timeout(
+                    connect=5.0,      # Connection timeout
+                    read=self.timeout,  # Read timeout
+                    write=5.0,        # Write timeout
+                    pool=10.0         # Pool timeout
+                ),
+                headers={
+                    "User-Agent": f"AI-Agent-Gateway/{self.settings.version}",
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.settings.supabase_service_key}"
+                },
+                limits=httpx.Limits(
+                    max_keepalive_connections=50,  # Increased for better pooling
+                    max_connections=200,           # Increased total connections
+                    keepalive_expiry=30.0          # Keep connections alive longer
+                ),
+                http2=False,  # Disable HTTP/2 fallback
+                follow_redirects=True  # Handle redirects automatically
+            )
     
     async def close(self):
         """Close HTTP client."""

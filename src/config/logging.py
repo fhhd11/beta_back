@@ -18,11 +18,16 @@ def setup_logging(log_level: str = "INFO", log_format: str = "json") -> None:
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         log_format: Log format ("json" or "console")
     """
+    # For development, use INFO level to reduce debug noise
+    effective_log_level = log_level
+    if log_level == "DEBUG":
+        effective_log_level = "INFO"
+    
     # Configure standard library logging
     logging.basicConfig(
         format="%(message)s",
         stream=sys.stdout,
-        level=getattr(logging, log_level.upper()),
+        level=getattr(logging, effective_log_level.upper()),
     )
     
     # Configure structlog processors
