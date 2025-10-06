@@ -141,17 +141,7 @@ app.add_middleware(
     max_age=600  # Cache preflight response for 10 minutes
 )
 
-# Add custom middleware (order matters - last added runs first)
-app.add_middleware(AuthMiddleware)
-app.add_middleware(CircuitBreakerMiddleware)
-
-if settings.enable_rate_limiting:
-    app.add_middleware(RateLimitMiddleware)
-
-# Setup exception handlers
-setup_exception_handlers(app)
-
-# Single optimized request logging middleware
+# Single optimized request logging middleware (must be first)
 @app.middleware("http")
 async def request_logging_middleware(request: Request, call_next):
     """Log requests with timing and correlation ID."""
@@ -266,6 +256,17 @@ async def request_logging_middleware(request: Request, call_next):
         
         # Re-raise exception to be handled by exception handlers
         raise
+
+
+# Add custom middleware (order matters - last added runs first)
+app.add_middleware(AuthMiddleware)
+app.add_middleware(CircuitBreakerMiddleware)
+
+if settings.enable_rate_limiting:
+    app.add_middleware(RateLimitMiddleware)
+
+# Setup exception handlers
+setup_exception_handlers(app)
 
 
 

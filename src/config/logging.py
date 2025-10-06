@@ -193,8 +193,12 @@ def _suppress_noisy_loggers(log_level: str) -> None:
             logging.getLogger(logger_name).setLevel(logging.ERROR)
             logging.getLogger(logger_name).propagate = False
     
-    # Set root logger to INFO to suppress debug messages
-    logging.getLogger().setLevel(logging.INFO)
+    # Suppress CORS parsing logs specifically
+    cors_logger = logging.getLogger("fastapi.middleware.cors")
+    cors_logger.setLevel(logging.WARNING)
+    cors_logger.propagate = False
+    
+    # Don't change root logger level - let application control its own logging
 
 
 class PerformanceLogger:
