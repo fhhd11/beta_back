@@ -19,6 +19,21 @@ from src.utils.exceptions import CircuitBreakerError, ServiceUnavailableError
 
 logger = structlog.get_logger(__name__)
 
+# Rate limiting for circuit breaker logs
+_last_log_times: Dict[str, float] = {}
+LOG_RATE_LIMIT = 30  # Log at most once every 30 seconds per service
+
+def should_log_circuit_breaker(service_name: str) -> bool:
+    """Check if we should log circuit breaker message for this service."""
+    current_time = time.time()
+    last_log_time = _last_log_times.get(service_name, 0)
+    
+    if current_time - last_log_time >= LOG_RATE_LIMIT:
+        _last_log_times[service_name] = current_time
+        return True
+    
+    return False
+
 
 class CircuitBreakerState(str, Enum):
     """Circuit breaker states."""
@@ -340,12 +355,15 @@ class CircuitBreakerMiddleware(BaseHTTPMiddleware):
             
             # Check if circuit breaker allows execution
             if not await circuit_breaker.can_execute():
-                logger.warning(
-                    "Circuit breaker rejected request",
-                    service=service_name,
-                    path=request.url.path,
-                    state=circuit_breaker.state
-                )
+                # Only log if we haven't logged recently for this service
+                if should_log_circuit_breaker(service_name):
+                    logger.warning(
+                        "Circuit breaker rejected request",
+                        service=service_name,
+                        path=request.url.path,
+                        state=circuit_breaker.state,
+                        note="Further rejections will be logged every 30 seconds"
+                    )
                 
                 raise CircuitBreakerError(
                     f"Service {service_name} is currently unavailable",

@@ -155,7 +155,7 @@ def filter_empty_messages(logger: Any, method_name: str, event_dict: Dict[str, A
         if "comma-separated parsed:" in event:
             return None
     
-    # Only filter if ALL values are empty - be less aggressive
+    # Check if all values are empty or whitespace
     has_meaningful_content = False
     for key, value in event_dict.items():
         if value is not None and str(value).strip():
@@ -165,19 +165,24 @@ def filter_empty_messages(logger: Any, method_name: str, event_dict: Dict[str, A
     if not has_meaningful_content:
         return None
     
+    # Additional check: if event is just whitespace or empty after processing
+    if not event or not str(event).strip():
+        return None
+    
     return event_dict
 
 
 def _suppress_noisy_loggers(log_level: str) -> None:
     """Suppress noisy third-party loggers based on log level."""
-    # Suppress these noisy loggers but keep some level of logging
+    # Suppress these noisy loggers completely
     noisy_loggers = [
         "httpx", "httpcore", "uvicorn.access", "uvicorn.error",
         "asyncio", "multipart", "urllib3", "requests", "anyio", "h11"
     ]
     
     for logger_name in noisy_loggers:
-        logging.getLogger(logger_name).setLevel(logging.WARNING)
+        logging.getLogger(logger_name).setLevel(logging.CRITICAL)
+        logging.getLogger(logger_name).propagate = False
     
     # More aggressive suppression for production
     if log_level in ["WARNING", "ERROR", "CRITICAL"]:
@@ -186,8 +191,10 @@ def _suppress_noisy_loggers(log_level: str) -> None:
         ]
         for logger_name in production_loggers:
             logging.getLogger(logger_name).setLevel(logging.ERROR)
+            logging.getLogger(logger_name).propagate = False
     
-    # Don't change root logger level - let our application logs through
+    # Set root logger to INFO to suppress debug messages
+    logging.getLogger().setLevel(logging.INFO)
 
 
 class PerformanceLogger:
