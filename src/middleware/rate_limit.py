@@ -23,15 +23,21 @@ logger = structlog.get_logger(__name__)
 RATE_LIMIT_CATEGORIES = {
     "general": {
         "paths": ["/api/v1/me", "/api/v1/agents", "/api/v1/templates"],
-        "limit_key": "rate_limit_general"
+        "limit_key": "rate_limit_general",
+        "window_size": 3600,  # 1 hour
+        "burst_limit": 100    # Burst requests allowed
     },
     "llm": {
         "paths": ["/api/v1/letta", "/api/v1/agents/*/messages"],
-        "limit_key": "rate_limit_llm"
+        "limit_key": "rate_limit_llm",
+        "window_size": 3600,  # 1 hour
+        "burst_limit": 50     # Lower burst for LLM requests
     },
     "proxy": {
         "paths": ["/api/v1/agents/*/proxy"],
-        "limit_key": "rate_limit_proxy"
+        "limit_key": "rate_limit_proxy",
+        "window_size": 3600,  # 1 hour
+        "burst_limit": 200    # Higher burst for proxy requests
     }
 }
 
@@ -55,6 +61,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.settings = settings or get_settings()
         self.window_size = 3600  # 1 hour in seconds
         self.redis_client = None
+        self.burst_window = 60   # 1 minute burst window
     
     async def dispatch(self, request: Request, call_next):
         """Apply rate limiting to incoming requests."""
@@ -166,18 +173,28 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         limit_key = RATE_LIMIT_CATEGORIES[category]["limit_key"]
         return getattr(self.settings, limit_key, 1000)
     
+    def _get_burst_limit_for_category(self, category: str) -> int:
+        """Get burst limit value for category."""
+        if category not in RATE_LIMIT_CATEGORIES:
+            category = "general"
+        
+        return RATE_LIMIT_CATEGORIES[category]["burst_limit"]
+    
     async def _check_rate_limit(self, request: Request) -> RateLimitInfo:
         """Check rate limit using sliding window algorithm."""
         user_id = self._get_user_identifier(request)
         category = self._get_rate_limit_category(request.url.path)
         limit = self._get_rate_limit_for_category(category)
+        burst_limit = self._get_burst_limit_for_category(category)
         
-        # Create Redis key
+        # Create Redis keys
         redis_key = f"rate_limit:{category}:{user_id}"
+        burst_key = f"rate_limit_burst:{category}:{user_id}"
         
         # Get current time
         now = time.time()
         window_start = now - self.window_size
+        burst_start = now - self.burst_window
         
         # Get Redis client
         if self.redis_client is None:
@@ -188,20 +205,35 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             async with self.redis_client.pipeline() as pipe:
                 # Remove old entries outside the window
                 await pipe.zremrangebyscore(redis_key, 0, window_start)
+                await pipe.zremrangebyscore(burst_key, 0, burst_start)
                 
-                # Count current requests in window
+                # Count current requests in both windows
                 await pipe.zcard(redis_key)
+                await pipe.zcard(burst_key)
                 
-                # Add current request
+                # Add current request to both windows
                 await pipe.zadd(redis_key, {str(now): now})
+                await pipe.zadd(burst_key, {str(now): now})
                 
-                # Set expiry for the key
+                # Set expiry for the keys
                 await pipe.expire(redis_key, self.window_size + 60)
+                await pipe.expire(burst_key, self.burst_window + 60)
                 
                 # Execute pipeline
                 results = await pipe.execute()
                 
-                current_count = results[1]  # Count after removing old entries
+                current_count = results[2]  # Count after removing old entries
+                burst_count = results[3]    # Burst count
+            
+            # Check burst limit first
+            if burst_count > burst_limit:
+                # Burst limit exceeded
+                return RateLimitInfo(
+                    limit=limit,
+                    remaining=0,
+                    reset_time=datetime.fromtimestamp(now + self.burst_window).isoformat(),
+                    retry_after=int(self.burst_window)
+                )
             
             # Calculate remaining requests
             remaining = max(0, limit - current_count - 1)  # -1 for current request

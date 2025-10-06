@@ -35,10 +35,10 @@ class LLMProxyClient:
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=httpx.Timeout(
-                connect=5.0,      # Connection timeout
-                read=self.timeout, # Read timeout
-                write=10.0,       # Write timeout
-                pool=30.0         # Pool timeout
+                connect=self.settings.http_connect_timeout,
+                read=self.settings.http_read_timeout,
+                write=self.settings.http_write_timeout,
+                pool=self.settings.http_pool_timeout
             ),
             headers={
                 "User-Agent": f"AI-Agent-Gateway/{self.settings.version}",
@@ -46,9 +46,9 @@ class LLMProxyClient:
                 "Connection": "keep-alive"
             },
             limits=httpx.Limits(
-                max_keepalive_connections=50,  # Increased for better pooling
-                max_connections=200,           # Increased connection limit
-                keepalive_expiry=30.0          # Keep connections alive longer
+                max_keepalive_connections=self.settings.http_max_keepalive_connections,
+                max_connections=self.settings.http_max_connections,
+                keepalive_expiry=self.settings.http_keepalive_expiry
             ),
             # CRITICAL: Disable automatic decompression and buffering
             follow_redirects=True,
@@ -263,6 +263,9 @@ async def agent_llm_proxy(
         request_body_keys=list(request_body.keys()) if request_body else []
     )
     
+    # Get settings for configuration
+    settings = get_settings()
+    
     # Get LLM proxy client
     try:
         logger.debug("About to call get_llm_proxy_client()", user_id=user_id)
@@ -435,7 +438,7 @@ async def agent_llm_proxy(
                         last_log_time = time.time()
                         last_ping_time = time.time()
                         
-                        async for chunk in response.aiter_bytes(chunk_size=512):
+                        async for chunk in response.aiter_bytes(chunk_size=settings.stream_chunk_size):
                             if chunk:
                                 chunk_count += 1
                                 total_bytes += len(chunk)
@@ -445,8 +448,8 @@ async def agent_llm_proxy(
                                 
                                 current_time = time.time()
                                 
-                                # Send keep-alive pings every 30 seconds
-                                if current_time - last_ping_time > 30:
+                                # Send keep-alive pings every configured interval
+                                if current_time - last_ping_time > settings.stream_keepalive_interval:
                                     logger.debug(
                                         "Sending keep-alive ping",
                                         user_id=user_id,

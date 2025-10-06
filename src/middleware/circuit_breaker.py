@@ -35,6 +35,8 @@ class CircuitBreakerConfig:
     recovery_timeout: int = 60
     success_threshold: int = 3  # For half-open state
     timeout: float = 30.0
+    sliding_window_size: int = 100  # Number of requests in sliding window
+    minimum_requests: int = 10  # Minimum requests before circuit can open
 
 
 class CircuitBreaker:
@@ -48,6 +50,7 @@ class CircuitBreaker:
         self._success_count = 0
         self._last_failure_time = 0
         self._state_change_time = time.time()
+        self._request_window = []  # Sliding window of request results
     
     async def _get_redis(self):
         """Get Redis client for state persistence."""
@@ -107,6 +110,35 @@ class CircuitBreaker:
                 error=str(e)
             )
     
+    def _update_request_window(self, success: bool):
+        """Update sliding window with request result."""
+        current_time = time.time()
+        
+        # Add new request result
+        self._request_window.append({
+            'success': success,
+            'timestamp': current_time
+        })
+        
+        # Remove old entries outside sliding window
+        cutoff_time = current_time - 60  # 1 minute window
+        self._request_window = [
+            req for req in self._request_window 
+            if req['timestamp'] > cutoff_time
+        ]
+        
+        # Limit window size
+        if len(self._request_window) > self.config.sliding_window_size:
+            self._request_window = self._request_window[-self.config.sliding_window_size:]
+    
+    def _calculate_failure_rate(self) -> float:
+        """Calculate failure rate in sliding window."""
+        if not self._request_window:
+            return 0.0
+        
+        failures = sum(1 for req in self._request_window if not req['success'])
+        return failures / len(self._request_window)
+    
     @property
     def state(self) -> CircuitBreakerState:
         """Get current circuit breaker state."""
@@ -141,6 +173,8 @@ class CircuitBreaker:
     
     async def record_success(self):
         """Record a successful request."""
+        self._update_request_window(True)
+        
         if self._state == CircuitBreakerState.HALF_OPEN:
             self._success_count += 1
             
@@ -160,11 +194,16 @@ class CircuitBreaker:
     
     async def record_failure(self):
         """Record a failed request."""
+        self._update_request_window(False)
         self._failure_count += 1
         self._last_failure_time = time.time()
         
         if self._state == CircuitBreakerState.CLOSED:
-            if self._failure_count >= self.config.failure_threshold:
+            # Check if we have enough requests and high failure rate
+            if (len(self._request_window) >= self.config.minimum_requests and 
+                self._calculate_failure_rate() >= 0.5):  # 50% failure rate threshold
+                await self._transition_to_open()
+            elif self._failure_count >= self.config.failure_threshold:
                 await self._transition_to_open()
             else:
                 await self._save_state_to_redis()

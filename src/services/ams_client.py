@@ -29,16 +29,24 @@ class AMSClient:
         # Configure HTTP client with Supabase service key
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
-            timeout=httpx.Timeout(self.timeout),
+            timeout=httpx.Timeout(
+                connect=5.0,      # Connection timeout
+                read=self.timeout,  # Read timeout
+                write=5.0,        # Write timeout
+                pool=10.0         # Pool timeout
+            ),
             headers={
                 "User-Agent": f"AI-Agent-Gateway/{self.settings.version}",
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.settings.supabase_service_key}"
             },
             limits=httpx.Limits(
-                max_keepalive_connections=20,
-                max_connections=100
-            )
+                max_keepalive_connections=50,  # Increased for better pooling
+                max_connections=200,           # Increased total connections
+                keepalive_expiry=30.0          # Keep connections alive longer
+            ),
+            http2=True,  # Enable HTTP/2 for better performance
+            follow_redirects=True  # Handle redirects automatically
         )
     
     async def close(self):
@@ -65,7 +73,9 @@ class AMSClient:
             request_headers.update(headers)
         
         try:
-            response = await self.client.request(
+            # Use circuit breaker for AMS requests
+            response = await circuit_breaker.call(
+                self.client.request,
                 method=method,
                 url=path,
                 headers=request_headers,
@@ -134,6 +144,13 @@ class AMSClient:
         """Get user profile with agents from AMS."""
         logger.info("Fetching user profile from AMS", user_id=user_id)
         
+        # Try cache first
+        cache_key = f"ams_user_profile:{user_id}"
+        cached_data = await cache_manager.get(cache_key)
+        if cached_data:
+            logger.debug("AMS user profile cache hit", user_id=user_id)
+            return UserProfile(**cached_data)
+        
         response = await self._make_request(
             method="GET",
             path="/me",  # Direct path to AMS endpoint
@@ -180,7 +197,7 @@ class AMSClient:
                 updated_at=data.get("updated_at")
             ))
         
-        return UserProfile(
+        user_profile = UserProfile(
             user_id=data["id"],
             email=data.get("email"),
             display_name=data.get("name"),
@@ -195,6 +212,11 @@ class AMSClient:
                 "profile_exists": data.get("profile_exists")
             }
         )
+        
+        # Cache the result for 5 minutes
+        await cache_manager.set(cache_key, user_profile.model_dump(), ttl=300)
+        
+        return user_profile
     
     async def create_agent(
         self,
@@ -410,6 +432,7 @@ class AMSClient:
         """Invalidate user-related cache entries."""
         cache_keys = [
             f"user_profile:{user_id}",
+            f"ams_user_profile:{user_id}",  # AMS-specific cache
             f"agent_ownership:*:{user_id}"  # Pattern for ownership cache
         ]
         

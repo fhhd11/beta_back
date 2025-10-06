@@ -135,6 +135,29 @@ active_requests = Gauge(
     registry=REGISTRY
 )
 
+# Performance metrics
+response_time_percentiles = Histogram(
+    'api_response_time_percentiles_seconds',
+    'Response time percentiles',
+    ['endpoint'],
+    buckets=[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0],
+    registry=REGISTRY
+)
+
+error_rate = Gauge(
+    'api_error_rate',
+    'Error rate by endpoint',
+    ['endpoint', 'status_code'],
+    registry=REGISTRY
+)
+
+throughput = Counter(
+    'api_throughput_requests_total',
+    'Total requests processed',
+    ['endpoint'],
+    registry=REGISTRY
+)
+
 # LLM proxy metrics
 llm_requests_counter = Counter(
     'api_llm_requests_total',
@@ -279,6 +302,32 @@ class MetricsCollector:
         """Update application uptime."""
         uptime = time.time() - self.start_time
         app_uptime.set(uptime)
+    
+    def record_response_time_percentile(self, endpoint: str, duration: float):
+        """Record response time for percentile calculation."""
+        response_time_percentiles.labels(endpoint=endpoint).observe(duration)
+    
+    def update_error_rate(self, endpoint: str, status_code: int, rate: float):
+        """Update error rate for endpoint."""
+        error_rate.labels(endpoint=endpoint, status_code=status_code).set(rate)
+    
+    def increment_throughput(self, endpoint: str):
+        """Increment throughput counter."""
+        throughput.labels(endpoint=endpoint).inc()
+    
+    def record_performance_metrics(self, endpoint: str, duration: float, status_code: int):
+        """Record comprehensive performance metrics."""
+        # Record response time percentiles
+        self.record_response_time_percentile(endpoint, duration)
+        
+        # Increment throughput
+        self.increment_throughput(endpoint)
+        
+        # Update error rate (simplified - in real implementation, calculate from historical data)
+        if status_code >= 400:
+            self.update_error_rate(endpoint, status_code, 1.0)
+        else:
+            self.update_error_rate(endpoint, status_code, 0.0)
 
 
 # Global metrics collector instance

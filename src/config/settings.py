@@ -41,6 +41,20 @@ class Settings(BaseSettings):
     request_timeout: float = 30.0
     letta_timeout: float = 60.0
     
+    # HTTP client settings
+    http_max_connections: int = 200
+    http_max_keepalive_connections: int = 50
+    http_keepalive_expiry: float = 30.0
+    http_connect_timeout: float = 5.0
+    http_read_timeout: float = 30.0
+    http_write_timeout: float = 5.0
+    http_pool_timeout: float = 10.0
+    
+    # Streaming settings
+    stream_chunk_size: int = 512
+    stream_keepalive_interval: int = 30
+    stream_buffer_size: int = 8192
+    
     # Feature flags
     enable_rate_limiting: bool = True
     enable_caching: bool = True
@@ -70,6 +84,9 @@ class Settings(BaseSettings):
     # Circuit breaker settings
     circuit_breaker_failure_threshold: int = 5
     circuit_breaker_recovery_timeout: int = 60
+    circuit_breaker_success_threshold: int = 3
+    circuit_breaker_sliding_window_size: int = 100
+    circuit_breaker_minimum_requests: int = 10
     circuit_breaker_expected_exception: tuple = (Exception,)
     
     # Logging configuration
