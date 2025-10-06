@@ -192,16 +192,55 @@ class AMSClient:
         cache_key = f"ams_user_profile:{user_id}"
         cached_data = await cache_manager.get(cache_key)
         if cached_data:
-            logger.debug("AMS user profile cache hit", user_id=user_id)
-            return UserProfile(**cached_data)
+            logger.info("AMS user profile cache hit", user_id=user_id, cached_data=cached_data)
+            # Check if cached data is not empty
+            if cached_data.get("email") or cached_data.get("letta_agent_id"):
+                return UserProfile(**cached_data)
+            else:
+                logger.warning("Cached data is empty, fetching from AMS", user_id=user_id)
+                # Clear empty cache
+                await cache_manager.delete(cache_key)
         
-        response = await self._make_request(
-            method="GET",
-            path="/me",  # Direct path to AMS endpoint
-            user_id=user_id
-        )
-        
-        data = response.json()
+        try:
+            response = await self._make_request(
+                method="GET",
+                path="/me",  # Direct path to AMS endpoint
+                user_id=user_id
+            )
+            
+            logger.info(
+                "AMS response received",
+                user_id=user_id,
+                status_code=response.status_code,
+                response_text=response.text[:500] if response.text else "No response text"
+            )
+            
+            data = response.json()
+            
+        except Exception as e:
+            logger.warning(
+                "AMS request failed, using fallback profile",
+                user_id=user_id,
+                error=str(e)
+            )
+            
+            # Clear cache to prevent stale data
+            await cache_manager.delete(cache_key)
+            
+            # Return fallback profile with minimal data
+            return UserProfile(
+                user_id=user_id,
+                email=None,
+                display_name=None,
+                role="authenticated",
+                litellm_key=None,
+                letta_agent_id=None,
+                agent_status=None,
+                agents=[],
+                created_at=None,
+                last_active=None,
+                metadata={"fallback": True, "ams_error": str(e)}
+            )
         
         logger.info(
             "User profile data from AMS",
