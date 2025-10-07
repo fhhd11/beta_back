@@ -153,12 +153,12 @@ class LiteLLMClient:
                 context={"error": str(e)}
             )
     
-    async def delete_user(self, user_email: str) -> bool:
+    async def delete_user(self, user_id: str) -> bool:
         """
-        Delete a LiteLLM internal user by email.
+        Delete a LiteLLM internal user by user_id (UUID).
         
         Args:
-            user_email: User's email address
+            user_id: User's UUID (same as Supabase Auth user_id)
             
         Returns:
             True if deleted successfully, False if user not found
@@ -166,8 +166,8 @@ class LiteLLMClient:
         Raises:
             UpstreamError: If deletion fails
         """
-        if not user_email:
-            logger.warning("Attempted to delete empty LiteLLM user email")
+        if not user_id:
+            logger.warning("Attempted to delete empty LiteLLM user_id")
             return False
         
         start_time = time.time()
@@ -175,14 +175,14 @@ class LiteLLMClient:
         try:
             logger.info(
                 "Deleting LiteLLM internal user",
-                email=user_email
+                user_id=user_id
             )
             
             # LiteLLM user deletion endpoint
-            # POST /user/delete with {"user_ids": [email]} or {"user_email": email}
+            # POST /user/delete with {"user_ids": [user_id]}
             response = await self.client.post(
                 "/user/delete",
-                json={"user_ids": [user_email]}
+                json={"user_ids": [user_id]}
             )
             
             duration = time.time() - start_time
@@ -191,14 +191,14 @@ class LiteLLMClient:
             if response.status_code == 200:
                 logger.info(
                     "LiteLLM user deleted successfully",
-                    email=user_email,
+                    user_id=user_id,
                     duration_ms=round(duration * 1000, 2)
                 )
                 return True
             elif response.status_code == 404:
                 logger.warning(
                     "LiteLLM user not found (already deleted?)",
-                    email=user_email,
+                    user_id=user_id,
                     duration_ms=round(duration * 1000, 2)
                 )
                 return False
@@ -211,7 +211,7 @@ class LiteLLMClient:
                 
                 logger.error(
                     "Failed to delete LiteLLM user",
-                    email=user_email,
+                    user_id=user_id,
                     status_code=response.status_code,
                     error=error_detail,
                     duration_ms=round(duration * 1000, 2)
@@ -221,7 +221,7 @@ class LiteLLMClient:
                     f"LiteLLM user deletion failed: {response.status_code}",
                     service_name="litellm",
                     upstream_status=response.status_code,
-                    context={"detail": error_detail, "email": user_email}
+                    context={"detail": error_detail, "user_id": user_id}
                 )
         
         except httpx.TimeoutException:
@@ -230,7 +230,7 @@ class LiteLLMClient:
             
             logger.error(
                 "LiteLLM user deletion timeout",
-                email=user_email,
+                user_id=user_id,
                 timeout=self.timeout,
                 duration_ms=round(duration * 1000, 2)
             )
@@ -246,7 +246,7 @@ class LiteLLMClient:
             
             logger.error(
                 "LiteLLM user deletion connection error",
-                email=user_email,
+                user_id=user_id,
                 error=str(e),
                 duration_ms=round(duration * 1000, 2)
             )
@@ -254,7 +254,7 @@ class LiteLLMClient:
             raise UpstreamError(
                 f"LiteLLM connection error: {str(e)}",
                 service_name="litellm",
-                context={"error": str(e), "email": user_email}
+                context={"error": str(e), "user_id": user_id}
             )
     
     async def get_key_info(self, litellm_key: str) -> Optional[Dict[str, Any]]:

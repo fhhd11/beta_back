@@ -192,27 +192,24 @@ class AdminService:
                     logger.error("Failed to delete LiteLLM key", error=str(e))
                     raise Exception(f"Failed to delete LiteLLM key: {e}")
         
-        # Step 4: Delete LiteLLM internal user (by email)
-        if email:
-            try:
-                logger.info("Deleting LiteLLM internal user", email=email)
-                litellm_client = await get_litellm_client()
-                
-                deleted = await litellm_client.delete_user(email)
+        # Step 4: Delete LiteLLM internal user (by user_id)
+        try:
+            logger.info("Deleting LiteLLM internal user", user_id=user_id, email=email)
+            litellm_client = await get_litellm_client()
+            
+            deleted = await litellm_client.delete_user(user_id)
+            result["litellm_user_deleted"] = True
+            
+            logger.info("LiteLLM user deletion completed", user_id=user_id, email=email, deleted=deleted)
+            
+        except Exception as e:
+            # If 404, it's ok (already deleted)
+            if "404" in str(e):
+                logger.warning("LiteLLM user already deleted", user_id=user_id, email=email)
                 result["litellm_user_deleted"] = True
-                
-                logger.info("LiteLLM user deletion completed", email=email, deleted=deleted)
-                
-            except Exception as e:
-                # If 404, it's ok (already deleted)
-                if "404" in str(e):
-                    logger.warning("LiteLLM user already deleted", email=email)
-                    result["litellm_user_deleted"] = True
-                else:
-                    logger.error("Failed to delete LiteLLM user", email=email, error=str(e))
-                    raise Exception(f"Failed to delete LiteLLM user: {e}")
-        else:
-            logger.info("No email found, skipping LiteLLM user deletion")
+            else:
+                logger.error("Failed to delete LiteLLM user", user_id=user_id, email=email, error=str(e))
+                raise Exception(f"Failed to delete LiteLLM user: {e}")
         
         # Step 5: Delete from user_profiles
         try:
