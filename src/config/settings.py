@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     letta_api_key: str
     agent_secret_master_key: str
     
+    # Admin panel authentication
+    admin_secret_key: str = Field(default="change-me-in-production", description="Secret key for admin panel access")
+    
     # Performance settings
     max_concurrent_requests: int = 1000
     request_timeout: float = 30.0
@@ -204,6 +207,20 @@ class Settings(BaseSettings):
         if not v:
             # Allow placeholder for development
             return "dev-agent-secret-placeholder"
+        return v
+    
+    @field_validator("admin_secret_key")
+    @classmethod
+    def validate_admin_secret(cls, v):
+        """Validate Admin Secret Key is provided and secure."""
+        if not v:
+            raise ValueError("Admin secret key is required")
+        if v == "change-me-in-production":
+            # Allow in development but warn
+            import logging
+            logging.getLogger(__name__).warning("Using default admin secret key - change this in production!")
+        elif len(v) < 12:
+            raise ValueError("Admin secret key must be at least 12 characters long for security")
         return v
     
     @property

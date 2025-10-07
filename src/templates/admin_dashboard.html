@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - User Management</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            color: #667eea;
+            font-size: 24px;
+        }
+
+        .admin-info {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .search-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .search-box input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+
+        .btn-danger {
+            background: #f56565;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #e53e3e;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-top: 5px;
+        }
+
+        .users-table {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .table-header {
+            background: #f7fafc;
+            padding: 15px 20px;
+            border-bottom: 2px solid #e0e0e0;
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 15px 20px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        th {
+            background: #f7fafc;
+            color: #2d3748;
+            font-weight: 600;
+            font-size: 13px;
+            text-transform: uppercase;
+        }
+
+        tr:hover {
+            background: #f7fafc;
+        }
+
+        .user-email {
+            color: #667eea;
+            font-weight: 500;
+        }
+
+        .user-id {
+            font-family: monospace;
+            font-size: 12px;
+            color: #718096;
+        }
+
+        .agent-id {
+            font-family: monospace;
+            font-size: 12px;
+            color: #38b2ac;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #718096;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #fed7d7;
+            color: #c53030;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .success {
+            background: #c6f6d5;
+            color: #2f855a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #718096;
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 20px;
+            opacity: 0.5;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #e0e0e0;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            max-width: 500px;
+            width: 90%;
+        }
+
+        .modal-header {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #2d3748;
+        }
+
+        .modal-body {
+            margin-bottom: 20px;
+            color: #4a5568;
+            line-height: 1.6;
+        }
+
+        .modal-footer {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🔐 Admin Panel - User Management</h1>
+            <div class="admin-info">
+                Logged in as: <strong>{{ admin_username }}</strong>
+            </div>
+        </div>
+
+        <!-- Message area -->
+        <div id="message"></div>
+
+        <!-- Controls -->
+        <div class="controls">
+            <div class="search-box">
+                <input 
+                    type="text" 
+                    id="searchInput" 
+                    placeholder="Search users by email..." 
+                    autocomplete="off"
+                >
+                <button class="btn btn-primary" onclick="searchUsers()">Search</button>
+                <button class="btn btn-primary" onclick="loadAllUsers()">Show All</button>
+            </div>
+
+            <button class="btn btn-danger" onclick="showDeleteAllModal()">
+                🗑️ Delete All Users
+            </button>
+
+            <!-- Stats -->
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalUsers">0</div>
+                    <div class="stat-label">Total Users</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="usersWithAgents">0</div>
+                    <div class="stat-label">Users with Agents</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Users Table -->
+        <div class="users-table">
+            <div class="table-header">Users</div>
+            <div id="tableContent">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    Loading users...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete All Confirmation Modal -->
+    <div id="deleteAllModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">⚠️ Confirm Deletion</div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete <strong>ALL USERS</strong>?</p>
+                <p>This will:</p>
+                <ul>
+                    <li>Delete all Letta agents</li>
+                    <li>Delete all LiteLLM keys</li>
+                    <li>Delete all user profiles</li>
+                    <li>Delete all auth accounts</li>
+                </ul>
+                <p><strong>This action CANNOT be undone!</strong></p>
+                <div id="deleteAllProgress" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill" style="width: 0%">0%</div>
+                    </div>
+                    <div id="progressText"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="closeDeleteAllModal()">Cancel</button>
+                <button class="btn btn-danger" onclick="confirmDeleteAll()">Yes, Delete All</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allUsers = [];
+
+        // Load all users on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadAllUsers();
+        });
+
+        // Search on Enter key
+        document.getElementById('searchInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                searchUsers();
+            }
+        });
+
+        async function loadAllUsers() {
+            showLoading();
+            clearMessage();
+
+            try {
+                const response = await fetch('/api/v1/admin/users');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                allUsers = await response.json();
+                displayUsers(allUsers);
+                updateStats();
+            } catch (error) {
+                showError(`Failed to load users: ${error.message}`);
+                showEmptyState('Error loading users');
+            }
+        }
+
+        async function searchUsers() {
+            const query = document.getElementById('searchInput').value.trim();
+            
+            if (!query) {
+                loadAllUsers();
+                return;
+            }
+
+            showLoading();
+            clearMessage();
+
+            try {
+                const response = await fetch(`/api/v1/admin/users/search?q=${encodeURIComponent(query)}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const users = await response.json();
+                displayUsers(users);
+                
+                if (users.length === 0) {
+                    showInfo(`No users found matching "${query}"`);
+                }
+            } catch (error) {
+                showError(`Search failed: ${error.message}`);
+                showEmptyState('Search failed');
+            }
+        }
+
+        async function deleteUser(userId, email) {
+            if (!confirm(`Are you sure you want to delete user ${email}?\n\nThis will delete:\n- Letta agent\n- LiteLLM key\n- User profile\n- Auth account\n\nThis action CANNOT be undone!`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/v1/admin/users/${userId}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Delete failed');
+                }
+
+                const result = await response.json();
+                showSuccess(`User ${email} deleted successfully`);
+                
+                // Reload users
+                loadAllUsers();
+            } catch (error) {
+                showError(`Failed to delete user: ${error.message}`);
+            }
+        }
+
+        function showDeleteAllModal() {
+            document.getElementById('deleteAllModal').classList.add('active');
+        }
+
+        function closeDeleteAllModal() {
+            document.getElementById('deleteAllModal').classList.remove('active');
+            document.getElementById('deleteAllProgress').style.display = 'none';
+        }
+
+        async function confirmDeleteAll() {
+            const progressDiv = document.getElementById('deleteAllProgress');
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+            
+            progressDiv.style.display = 'block';
+            progressFill.style.width = '0%';
+            progressFill.textContent = '0%';
+            progressText.textContent = 'Starting deletion...';
+
+            try {
+                const response = await fetch('/api/v1/admin/users/delete-all', {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    progressFill.style.width = '100%';
+                    progressFill.textContent = '100%';
+                    progressText.textContent = `Successfully deleted ${result.deleted} users`;
+                    
+                    setTimeout(() => {
+                        closeDeleteAllModal();
+                        showSuccess(`All ${result.deleted} users deleted successfully`);
+                        loadAllUsers();
+                    }, 2000);
+                } else {
+                    progressFill.style.width = `${(result.deleted / result.total * 100)}%`;
+                    progressFill.textContent = `${result.deleted}/${result.total}`;
+                    progressText.textContent = `Failed at user ${result.failed_user_email}: ${result.error}`;
+                    showError(`Deletion stopped: ${result.error}`);
+                }
+            } catch (error) {
+                progressText.textContent = `Error: ${error.message}`;
+                showError(`Failed to delete all users: ${error.message}`);
+            }
+        }
+
+        function displayUsers(users) {
+            const tableContent = document.getElementById('tableContent');
+            
+            if (users.length === 0) {
+                showEmptyState('No users found');
+                return;
+            }
+
+            const html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Email</th>
+                            <th>User ID</th>
+                            <th>Agent ID</th>
+                            <th>Agent Status</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${users.map(user => `
+                            <tr>
+                                <td class="user-email">${user.email || 'N/A'}</td>
+                                <td class="user-id">${user.id}</td>
+                                <td class="agent-id">${user.letta_agent_id || 'N/A'}</td>
+                                <td>${user.agent_status || 'N/A'}</td>
+                                <td>${user.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A'}</td>
+                                <td>
+                                    <button 
+                                        class="btn btn-danger btn-small" 
+                                        onclick="deleteUser('${user.id}', '${user.email || user.id}')"
+                                    >
+                                        Delete
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            
+            tableContent.innerHTML = html;
+        }
+
+        function updateStats() {
+            document.getElementById('totalUsers').textContent = allUsers.length;
+            const usersWithAgents = allUsers.filter(u => u.letta_agent_id).length;
+            document.getElementById('usersWithAgents').textContent = usersWithAgents;
+        }
+
+        function showLoading() {
+            document.getElementById('tableContent').innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    Loading users...
+                </div>
+            `;
+        }
+
+        function showEmptyState(message) {
+            document.getElementById('tableContent').innerHTML = `
+                <div class="empty-state">
+                    <svg fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"></path>
+                    </svg>
+                    <p>${message}</p>
+                </div>
+            `;
+        }
+
+        function showError(message) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.innerHTML = `<div class="error">❌ ${message}</div>`;
+            setTimeout(() => messageDiv.innerHTML = '', 5000);
+        }
+
+        function showSuccess(message) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.innerHTML = `<div class="success">✅ ${message}</div>`;
+            setTimeout(() => messageDiv.innerHTML = '', 5000);
+        }
+
+        function showInfo(message) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.innerHTML = `<div class="success">ℹ️ ${message}</div>`;
+            setTimeout(() => messageDiv.innerHTML = '', 5000);
+        }
+
+        function clearMessage() {
+            document.getElementById('message').innerHTML = '';
+        }
+    </script>
+</body>
+</html>
+

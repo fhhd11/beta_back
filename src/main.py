@@ -20,7 +20,7 @@ from src.config.logging import setup_logging
 from src.middleware.auth import AuthMiddleware
 from src.middleware.rate_limit import RateLimitMiddleware
 from src.middleware.circuit_breaker import CircuitBreakerMiddleware
-from src.routers import system, user, letta, agents, templates, llm_proxy, ams
+from src.routers import system, user, letta, agents, templates, llm_proxy, ams, admin_api, admin_ui
 from src.utils.metrics import setup_metrics, request_duration, request_counter
 from src.utils.cache import get_redis_client
 from src.utils.exceptions import setup_exception_handlers
@@ -279,6 +279,9 @@ app.include_router(ams.router, prefix="/api/v1/ams", tags=["AMS Proxy"])
 app.include_router(llm_proxy.router, prefix="/api/v1/agents", tags=["LLM Proxy"])
 app.include_router(agents.router, prefix="/api/v1/agents", tags=["Agent Management (Legacy)"])
 app.include_router(templates.router, prefix="/api/v1/templates", tags=["Template Management (Legacy)"])
+# Admin panel (UI and API)
+app.include_router(admin_ui.router, prefix="/ui", tags=["Admin UI"], include_in_schema=False)
+app.include_router(admin_api.router, prefix="/api/v1/admin", tags=["Admin API"])
 
 # Prometheus metrics endpoint
 @app.get("/metrics", include_in_schema=False)
