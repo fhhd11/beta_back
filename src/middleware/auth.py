@@ -37,6 +37,12 @@ PUBLIC_ENDPOINTS: Set[str] = {
     "/cors-debug"
 }
 
+# Admin endpoints with their own authentication (HTTP Basic Auth)
+ADMIN_ENDPOINTS_PREFIXES = [
+    "/ui",
+    "/api/v1/admin"
+]
+
 # Agent Secret Key endpoints (different auth method)
 AGENT_SECRET_ENDPOINTS: Set[str] = {
     "/api/v1/agents/{user_id}/proxy",
@@ -80,6 +86,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # Check if endpoint requires authentication
             if self._is_public_endpoint(request.url.path):
                 logger.debug("Public endpoint, skipping auth", path=request.url.path)
+                return await call_next(request)
+            
+            # Check if endpoint is admin endpoint with its own auth
+            if self._is_admin_endpoint(request.url.path):
+                logger.debug("Admin endpoint with own auth, skipping JWT auth", path=request.url.path)
                 return await call_next(request)
             
             # Handle agent secret key authentication
@@ -138,6 +149,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
     def _is_public_endpoint(self, path: str) -> bool:
         """Check if endpoint is public and doesn't require authentication."""
         return path in PUBLIC_ENDPOINTS
+    
+    def _is_admin_endpoint(self, path: str) -> bool:
+        """Check if endpoint is admin endpoint with its own authentication."""
+        for prefix in ADMIN_ENDPOINTS_PREFIXES:
+            if path.startswith(prefix):
+                return True
+        return False
     
     def _is_agent_secret_endpoint(self, path: str) -> bool:
         """Check if endpoint uses agent secret key authentication."""
