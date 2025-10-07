@@ -22,14 +22,27 @@ class LiteLLMClient:
         self.base_url = str(self.settings.litellm_base_url).rstrip('/')
         self.timeout = self.settings.request_timeout
         
+        # Prepare headers with master key if available
+        headers = {
+            "User-Agent": f"AI-Agent-Gateway/{self.settings.version}",
+            "Content-Type": "application/json",
+        }
+        
+        # Add LiteLLM master key for authentication
+        if self.settings.litellm_master_key:
+            headers["Authorization"] = f"Bearer {self.settings.litellm_master_key}"
+            logger.info(
+                "LiteLLM client initialized with master key",
+                key_prefix=self.settings.litellm_master_key[:8] + "..." if len(self.settings.litellm_master_key) > 8 else "***"
+            )
+        else:
+            logger.warning("LiteLLM client initialized WITHOUT master key - some operations may fail")
+        
         # Configure HTTP client
         self.client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=httpx.Timeout(self.timeout),
-            headers={
-                "User-Agent": f"AI-Agent-Gateway/{self.settings.version}",
-                "Content-Type": "application/json",
-            },
+            headers=headers,
             limits=httpx.Limits(
                 max_keepalive_connections=20,
                 max_connections=100

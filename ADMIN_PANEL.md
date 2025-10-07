@@ -31,14 +31,19 @@ When you navigate to `/ui`, your browser will prompt for credentials. Enter any 
 
 ## Configuration
 
-### Environment Variable
+### Environment Variables
 
 Add the following to your `.env` file:
 
 ```bash
 # Admin Panel Secret Key (minimum 12 characters for security)
 ADMIN_SECRET_KEY=your-super-secret-admin-key-change-me-in-production
+
+# LiteLLM Master Key (required for deleting user API keys)
+LITELLM_MASTER_KEY=sk-your-litellm-master-key
 ```
+
+**Important:** Without `LITELLM_MASTER_KEY`, user deletion will fail at the LiteLLM key deletion step.
 
 **Security Notes:**
 - Use a strong, random key in production (minimum 12 characters)

@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     letta_api_key: str
     agent_secret_master_key: str
     
+    # LiteLLM configuration (optional, only needed for admin operations)
+    litellm_master_key: Optional[str] = Field(default=None, description="LiteLLM master key for admin operations")
+    
     # Admin panel authentication
     admin_secret_key: str = Field(default="change-me-in-production", description="Secret key for admin panel access")
     
