@@ -290,9 +290,15 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
         )
     )
     
+    # Preserve headers from HTTPException (important for WWW-Authenticate)
+    response_headers = {}
+    if hasattr(exc, 'headers') and exc.headers:
+        response_headers = exc.headers
+    
     return JSONResponse(
         status_code=exc.status_code,
-        content=error_response.dict(exclude_none=True)
+        content=error_response.dict(exclude_none=True),
+        headers=response_headers
     )
 
 
