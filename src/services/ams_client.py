@@ -296,8 +296,8 @@ class AMSClient:
             }
         )
         
-        # Cache the result for 5 minutes
-        await cache_manager.set(cache_key, user_profile.model_dump(), ttl=300)
+        # Cache the result for 5 seconds (very short TTL to ensure fresh data, only protects against burst requests)
+        await cache_manager.set(cache_key, user_profile.model_dump(), ttl=5)
         
         return user_profile
     
