@@ -49,7 +49,9 @@ RATE_LIMIT_EXEMPT_PATHS = {
     "/docs",
     "/redoc",
     "/openapi.json",
-    "/metrics"
+    "/metrics",
+    "/ui",              # Admin UI
+    "/api/v1/admin"     # Admin API
 }
 
 
