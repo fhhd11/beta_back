@@ -40,7 +40,8 @@ python -m uvicorn src.main:app --reload
 
 **Что удаляется:**
 - ✅ Letta агент
-- ✅ LiteLLM ключ
+- ✅ LiteLLM API ключ
+- ✅ LiteLLM internal user
 - ✅ Запись в user_profiles
 - ✅ Аккаунт в Supabase Auth
 - ✅ Все кэши

@@ -94,9 +94,10 @@ When you delete a user, the system performs the following steps in order:
 1. ✅ Retrieve user data from `user_profiles` table
 2. ✅ Delete Letta agent (if exists)
 3. ✅ Delete LiteLLM API key (if exists)
-4. ✅ Delete record from `user_profiles` table
-5. ✅ Delete user from Supabase Auth
-6. ✅ Clear all caches
+4. ✅ Delete LiteLLM internal user (by email)
+5. ✅ Delete record from `user_profiles` table
+6. ✅ Delete user from Supabase Auth
+7. ✅ Clear all caches
 
 **To delete a user:**
 1. Click the "Delete" button next to the user
@@ -123,6 +124,7 @@ When you delete a user, the system performs the following steps in order:
 **What gets deleted:**
 - All Letta agents
 - All LiteLLM API keys
+- All LiteLLM internal users
 - All user profile records
 - All Supabase Auth accounts
 

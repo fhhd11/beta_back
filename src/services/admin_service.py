@@ -141,6 +141,7 @@ class AdminService:
             "email": email,
             "letta_agent_deleted": False,
             "litellm_key_deleted": False,
+            "litellm_user_deleted": False,
             "profile_deleted": False,
             "auth_deleted": False
         }
@@ -191,7 +192,29 @@ class AdminService:
                     logger.error("Failed to delete LiteLLM key", error=str(e))
                     raise Exception(f"Failed to delete LiteLLM key: {e}")
         
-        # Step 4: Delete from user_profiles
+        # Step 4: Delete LiteLLM internal user (by email)
+        if email:
+            try:
+                logger.info("Deleting LiteLLM internal user", email=email)
+                litellm_client = await get_litellm_client()
+                
+                deleted = await litellm_client.delete_user(email)
+                result["litellm_user_deleted"] = True
+                
+                logger.info("LiteLLM user deletion completed", email=email, deleted=deleted)
+                
+            except Exception as e:
+                # If 404, it's ok (already deleted)
+                if "404" in str(e):
+                    logger.warning("LiteLLM user already deleted", email=email)
+                    result["litellm_user_deleted"] = True
+                else:
+                    logger.error("Failed to delete LiteLLM user", email=email, error=str(e))
+                    raise Exception(f"Failed to delete LiteLLM user: {e}")
+        else:
+            logger.info("No email found, skipping LiteLLM user deletion")
+        
+        # Step 5: Delete from user_profiles
         try:
             logger.info("Deleting from user_profiles", user_id=user_id)
             
@@ -210,7 +233,7 @@ class AdminService:
             logger.error("Failed to delete user profile", user_id=user_id, error=str(e))
             raise Exception(f"Failed to delete user profile: {e}")
         
-        # Step 5: Delete from Supabase Auth
+        # Step 6: Delete from Supabase Auth
         try:
             logger.info("Deleting from Supabase Auth", user_id=user_id)
             
@@ -237,7 +260,7 @@ class AdminService:
                 logger.error("Failed to delete from Supabase Auth", user_id=user_id, error=str(e))
                 raise Exception(f"Failed to delete from Supabase Auth: {e}")
         
-        # Step 6: Clear caches
+        # Step 7: Clear caches
         try:
             logger.info("Clearing user caches", user_id=user_id)
             
