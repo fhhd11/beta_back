@@ -1,11 +1,11 @@
 """
-Simple Letta proxy router - direct pass-through with blacklist filtering and streaming support.
+Simple Letta proxy router - direct pass-through with blacklist filtering, streaming, and file upload support.
 """
 
 import re
 import time
-from typing import Dict, Any
-from fastapi import APIRouter, Request, Depends, HTTPException
+from typing import Dict, Any, Optional
+from fastapi import APIRouter, Request, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import Response, StreamingResponse
 import httpx
 import structlog
@@ -46,8 +46,7 @@ async def get_letta_client() -> httpx.AsyncClient:
             timeout=httpx.Timeout(settings.letta_timeout),
             headers={
                 "Authorization": f"Bearer {settings.letta_api_key}",
-                "Content-Type": "application/json",
-                "Accept": "application/json"
+                # Content-Type will be set per-request to support both JSON and multipart/form-data
             },
             # Disable response buffering for streaming
             follow_redirects=True
@@ -78,6 +77,12 @@ def is_streaming_endpoint(path: str) -> bool:
         patterns=STREAMING_PATTERNS
     )
     return False
+
+def is_multipart_request(content_type: Optional[str]) -> bool:
+    """Check if request is multipart/form-data."""
+    if not content_type:
+        return False
+    return content_type.startswith("multipart/form-data")
 
 @router.get("/debug/test")
 async def debug_test():
@@ -124,7 +129,7 @@ async def debug_streaming_patterns():
     "/{path:path}",
     methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
     summary="Letta Proxy",
-    description="Direct proxy to Letta API with blacklist filtering"
+    description="Direct proxy to Letta API with blacklist filtering, streaming, and file upload support"
 )
 async def letta_proxy(
     request: Request,
@@ -139,7 +144,12 @@ async def letta_proxy(
     - Path rewriting: /api/v1/letta/* -> /v1/*
     - Blacklist filtering for security
     - Streaming support for streaming endpoints
+    - File upload support (multipart/form-data)
     - Direct pass-through of requests/responses
+    
+    Supported Content Types:
+    - application/json: Standard JSON requests
+    - multipart/form-data: File uploads with optional form fields
     """
     logger.info(
         "Letta proxy called",
@@ -177,9 +187,75 @@ async def letta_proxy(
         user_id=user_id
     )
     
-    # Prepare request data early for stream_tokens check
+    # Detect request content type
+    content_type = request.headers.get("content-type", "")
+    is_multipart = is_multipart_request(content_type)
+    
+    # Prepare request data based on content type
     json_data = None
-    if request.headers.get("content-type", "").startswith("application/json"):
+    files_data = None
+    form_data = None
+    
+    if is_multipart:
+        # Handle multipart/form-data (file upload)
+        logger.info(
+            "Multipart request detected",
+            path=letta_path,
+            user_id=user_id,
+            content_type=content_type
+        )
+        
+        try:
+            # Parse multipart form data
+            form = await request.form()
+            files_data = {}
+            form_data = {}
+            
+            for field_name, field_value in form.items():
+                if hasattr(field_value, 'file'):
+                    # This is a file field
+                    file_content = await field_value.read()
+                    files_data[field_name] = (
+                        field_value.filename,
+                        file_content,
+                        field_value.content_type or 'application/octet-stream'
+                    )
+                    logger.debug(
+                        "File field extracted",
+                        field_name=field_name,
+                        filename=field_value.filename,
+                        size=len(file_content),
+                        content_type=field_value.content_type
+                    )
+                else:
+                    # This is a regular form field
+                    form_data[field_name] = field_value
+                    logger.debug(
+                        "Form field extracted",
+                        field_name=field_name,
+                        value_length=len(str(field_value))
+                    )
+            
+            logger.info(
+                "Multipart data parsed",
+                files_count=len(files_data),
+                form_fields_count=len(form_data),
+                user_id=user_id
+            )
+            
+        except Exception as e:
+            logger.error(
+                "Failed to parse multipart data",
+                error=str(e),
+                user_id=user_id
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid multipart/form-data: {str(e)}"
+            )
+    
+    elif content_type.startswith("application/json"):
+        # Handle JSON data
         try:
             json_data = await request.json()
         except Exception:
@@ -216,14 +292,25 @@ async def letta_proxy(
         # Get Letta client
         letta_client = await get_letta_client()
         
-        # Prepare headers (exclude auth headers)
+        # Prepare headers (exclude certain headers)
         headers = {}
+        excluded_headers = ["authorization", "host", "content-length"]
+        
+        # For multipart requests, also exclude content-type (let httpx handle it)
+        if is_multipart:
+            excluded_headers.append("content-type")
+        
         for key, value in request.headers.items():
-            if key.lower() not in ["authorization", "host", "content-length"]:
+            if key.lower() not in excluded_headers:
                 headers[key] = value
         
         # Add user context
         headers["X-User-Id"] = user_id
+        
+        # For JSON requests, ensure proper content type
+        if not is_multipart and json_data is not None:
+            headers["Content-Type"] = "application/json"
+            headers["Accept"] = "application/json"
         
         # For streaming requests, ensure proper headers
         if is_streaming:
@@ -253,13 +340,25 @@ async def letta_proxy(
                 )
                 
                 try:
-                    async with letta_client.stream(
-                        method=request.method,
-                        url=letta_path,
-                        headers=headers,
-                        json=json_data,
-                        params=dict(request.query_params)
-                    ) as response:
+                    # Prepare request parameters
+                    request_params = {
+                        "method": request.method,
+                        "url": letta_path,
+                        "headers": headers,
+                        "params": dict(request.query_params)
+                    }
+                    
+                    # Add data based on content type
+                    if is_multipart and files_data:
+                        # For multipart requests with files
+                        request_params["files"] = files_data
+                        if form_data:
+                            request_params["data"] = form_data
+                    elif json_data is not None:
+                        # For JSON requests
+                        request_params["json"] = json_data
+                    
+                    async with letta_client.stream(**request_params) as response:
                         # Check response status
                         logger.info(
                             "Letta streaming response received",
@@ -409,15 +508,36 @@ async def letta_proxy(
                 "Entering regular mode (non-streaming)",
                 path=letta_path,
                 user_id=user_id,
-                is_streaming=is_streaming
+                is_streaming=is_streaming,
+                is_multipart=is_multipart,
+                has_files=bool(files_data) if files_data else False
             )
-            response = await letta_client.request(
-                method=request.method,
-                url=letta_path,
-                headers=headers,
-                json=json_data,
-                params=dict(request.query_params)
-            )
+            
+            # Prepare request parameters
+            request_params = {
+                "method": request.method,
+                "url": letta_path,
+                "headers": headers,
+                "params": dict(request.query_params)
+            }
+            
+            # Add data based on content type
+            if is_multipart and files_data:
+                # For multipart requests with files
+                request_params["files"] = files_data
+                if form_data:
+                    request_params["data"] = form_data
+                logger.info(
+                    "Sending multipart request",
+                    files_count=len(files_data),
+                    form_fields_count=len(form_data) if form_data else 0,
+                    user_id=user_id
+                )
+            elif json_data is not None:
+                # For JSON requests
+                request_params["json"] = json_data
+            
+            response = await letta_client.request(**request_params)
             
             # Return response directly
             return Response(
